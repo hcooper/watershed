@@ -21,11 +21,23 @@ logging.basicConfig(
     datefmt="%Y-%m-%dT%H:%M:%S%z",
 )
 
+access_log = logging.getLogger("aiohttp.access")
+access_log.setLevel(logging.INFO)
+handler = logging.FileHandler("access.log")
+formatter = logging.Formatter("%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+handler.setFormatter(formatter)
+access_log.addHandler(handler)
+# access_log.propagate = False
 
-class watershed:
-    def __init__(self, lat: float, lon: float, name: str, expand_factor: float):
-        self.id = str(uuid.uuid4())[:4]
 
+def make_id() -> str:
+    return str(uuid.uuid4())[:4]
+
+
+class Watershed:
+    def __init__(self, lat: float, lon: float, name: str, expand_factor: float, client_id):
+
+        self.id = client_id #if client_id else make_id()
         self.outdir = "output"
         os.makedirs(self.outdir, exist_ok=True)
 
@@ -43,7 +55,7 @@ class watershed:
     async def _log(self, msg):
         log_message = f"[{self.id}] {msg}"
         logging.info(log_message)
-        await broadcast_message(log_message)
+        await broadcast_message(f"log:{log_message}", self.id)
 
     async def work(self):
         self.dem_filename = await self.get_dem()
@@ -51,6 +63,7 @@ class watershed:
         self.clipped = await self.clipping_check()
         self.geojson = await self.export_geojson()
         self.kml = await self.export_kml()
+        await self._log("Done!")
 
     async def get_dem(self) -> str:
         dataset = "USGS10m"
@@ -63,7 +76,6 @@ class watershed:
             "outputFormat": "GTiff",
             "API_Key": OT_API_KEY,
         }
-        await self._log(params)
 
         dem_filename = f"{self.outdir}/dem_{dataset}_{self.name}.tif"
 
@@ -101,7 +113,7 @@ class watershed:
 
         dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
 
-        await self._log("Calculcating catchment")
+        await self._log("Calculating catchment")
         fdir = grid.flowdir(inflated_dem, dirmap=dirmap)
         acc = grid.accumulation(fdir, dirmap=dirmap)
 
@@ -117,7 +129,7 @@ class watershed:
         catch_view = grid.view(catch, dtype=np.uint8)
 
         shapes = [shape for shape in grid.polygonize(catch_view)]
-        assert len(shapes) == 1  # Can't have multiple watersheds
+        # assert len(shapes) == 1  # Can't have multiple watersheds
 
         return shapes
 
@@ -141,7 +153,7 @@ class watershed:
                 ]
             )
             if d < 0.0002:  # the magic number
-                print(f"CLIPPED DETECTED: {y},{x} {d}")
+                await self._log(f"Clipping detected: {y},{x} {d}")
                 return True
         return False
 
@@ -191,7 +203,9 @@ class watershed:
 
 
 async def handle_index(request):
-    return web.FileResponse("static/index.html")
+    with open("static/index.html") as f:
+        index = f.read()
+        return web.Response(text=index, content_type="text/html")
 
 
 async def handle_submit(request):
@@ -207,62 +221,57 @@ async def handle_submit(request):
         lat, lon = map(float, coordinates.split(","))
         name = data["name"]
         expand_factor = float(data["expand_factor"])
+        client_id = data["client_id"]
     except (KeyError, ValueError):
         return web.Response(text="Invalid input", status=400)
 
-    ws = watershed(lat, lon, name, expand_factor)
-    await ws.work()
+    watershed = Watershed(lat, lon, name, expand_factor, client_id)
+    await watershed.work()
 
+    response_content = ""
 
-    kml_url = urllib.parse.quote(
-        f"https://watershed.attack-kitten.com/{ws.kml}", safe=""
-    )
+    if watershed.clipped:
+        response_content += "<div class='warning'>Warning: clipping was detected!</div>"
 
     # Caltopo badly handles spaces in the kml url, even when they're encoded as %20. Instead
     # you have to double-encode the "%" as "%25".
-    kml_url = kml_url.replace("%20", "%2520")
-
+    kml_url = urllib.parse.quote(
+        f"https://watershed.attack-kitten.com/{watershed.kml}", safe=""
+    ).replace("%20", "%2520")
     caltopo_url = f"http://caltopo.com/map.html#ll={lat},{lon}&z=13&kml={kml_url}"
-
-    print(caltopo_url)
-
-    response_content = f"""
-        <html>
-        <body>
-            <script type="text/javascript">
-        setTimeout(function(){{
-            window.open("{caltopo_url}", "_blank");
-        }}, 1);
-    </script>
-            <h1>Watershed Calculation Complete</h1>
-            <p><a href="{caltopo_url}">Open in Caltopo</a></p>
-        </body>
-        </html>
-        """
+    response_content += f"<a href='{caltopo_url}' class='button-link'>Open in Caltopo</a>"
 
     return web.Response(text=response_content, content_type="text/html")
 
 
-async def broadcast_message(message):
-    for ws in clients:
+async def broadcast_message(message, client_id=None) -> None:
+    if client_id:
+        ws = clients[client_id]
         await ws.send_str(message)
+    else:
+        for ws in clients.values():
+            await ws.send_str(message)
+
 
 async def websocket_handler(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
 
-    clients.append(ws)
-    await broadcast_message("new client!")
+    client_id = make_id()
+    clients[client_id] = ws
+
+    await ws.send_str(f"client_id:{client_id}")
+
     try:
         async for msg in ws:
             if msg.type == aiohttp.WSMsgType.TEXT:
-                if msg.data == 'close':
+                if msg.data == "close":
                     await ws.close()
             elif msg.type == aiohttp.WSMsgType.ERROR:
-                print(f'WebSocket connection closed with exception {ws.exception()}')
+                print(f"WebSocket connection closed with exception {ws.exception()}")
 
     finally:
-        clients.remove(ws)
+        clients.pop(client_id)
 
     return ws
 
@@ -275,11 +284,11 @@ app.router.add_static(prefix="/static", path="static/", show_index=False)
 app.router.add_get("/ws", websocket_handler)
 
 OT_API_KEY = os.getenv("OT_API_KEY")
-clients = []
+clients = {}
 
 if not OT_API_KEY:
     print("Error: OT_API_KEY must be set (Opentopography.org API Key)")
     sys.exit(1)
 
 if __name__ == "__main__":
-    web.run_app(app, host="okavango.ak", port=8080)
+    web.run_app(app, host="okavango.ak", port=8080, access_log=access_log)
