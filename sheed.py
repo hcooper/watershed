@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+from pysheds.grid import Grid
+import numpy as np
+import simplekml
+import aiohttp
+import asyncio
+import logging
+import geojson
+import os
+import uuid
+from aiohttp import web
+import json
+from typing import List
+import sys
+import urllib.parse
+from shapely.geometry import shape as shapely_shape
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S%z",
+)
+
+
+class watershed:
+    def __init__(self, lat: float, lon: float, name: str, expand_factor: float):
+        self.id = str(uuid.uuid4())[:4]
+
+        self.outdir = "output"
+        os.makedirs(self.outdir, exist_ok=True)
+
+        self.lat = lat
+        self.lon = lon
+        self.name = name
+        self.expand_factor = expand_factor
+        self.min_x, self.min_y, self.max_x, self.max_y = [
+            round(self.lon - self.expand_factor, 5),
+            round(self.lat - self.expand_factor, 5),
+            round(self.lon + self.expand_factor, 5),
+            round(self.lat + self.expand_factor, 5),
+        ]
+
+    async def _log(self, msg):
+        log_message = f"[{self.id}] {msg}"
+        logging.info(log_message)
+        await broadcast_message(log_message)
+
+    async def work(self):
+        self.dem_filename = await self.get_dem()
+        self.catchment_shapes = await self.calculate_catchment()
+        self.clipped = await self.clipping_check()
+        self.geojson = await self.export_geojson()
+        self.kml = await self.export_kml()
+
+    async def get_dem(self) -> str:
+        dataset = "USGS10m"
+        params = {
+            "datasetName": dataset,
+            "west": self.min_x,
+            "south": self.min_y,
+            "east": self.max_x,
+            "north": self.max_y,
+            "outputFormat": "GTiff",
+            "API_Key": OT_API_KEY,
+        }
+        await self._log(params)
+
+        dem_filename = f"{self.outdir}/dem_{dataset}_{self.name}.tif"
+
+        # Construct the API URL
+        base_url = "https://portal.opentopography.org/API/usgsdem"
+
+        await self._log(
+            f"Fetching {dataset} DEM centered on {self.lat},{self.lon} from opentopography.org..."
+        )
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(base_url, params=params) as response:
+                if response.status == 200:
+                    content = await response.read()
+                    with open(dem_filename, "wb") as file:
+                        file.write(content)
+                    await self._log(f"{dem_filename} downloaded successfully.")
+                else:
+                    await self._log(f"Error: {response.status}. Request was {params}")
+                    await self._log(await response.text())
+                    raise
+        return dem_filename
+
+    async def calculate_catchment(self) -> List:
+        if not self.dem_filename:
+            raise
+
+        await self._log("Preparing DEM")
+        grid = Grid.from_raster(self.dem_filename)
+        dem = grid.read_raster(self.dem_filename)
+
+        pit_filled_dem = grid.fill_pits(dem)
+        flooded_dem = grid.fill_depressions(pit_filled_dem)
+        inflated_dem = grid.resolve_flats(flooded_dem)
+
+        dirmap = (64, 128, 1, 2, 4, 8, 16, 32)
+
+        await self._log("Calculcating catchment")
+        fdir = grid.flowdir(inflated_dem, dirmap=dirmap)
+        acc = grid.accumulation(fdir, dirmap=dirmap)
+
+        # Snap pour point to high accumulation cell
+        x_snap, y_snap = grid.snap_to_mask(acc > 1000, (self.lon, self.lat))
+
+        # Delineate the catchment
+        catch = grid.catchment(
+            x=x_snap, y=y_snap, fdir=fdir, dirmap=dirmap, xytype="coordinate"
+        )
+
+        grid.clip_to(catch)
+        catch_view = grid.view(catch, dtype=np.uint8)
+
+        shapes = [shape for shape in grid.polygonize(catch_view)]
+        assert len(shapes) == 1  # Can't have multiple watersheds
+
+        return shapes
+
+    async def clipping_check(self) -> bool:
+        """
+        Detect if the catchment polygon comes close to the edge of the DEM. If so,
+        it's likely the catchment has been clipped and the DEM should be enlarged.
+        """
+
+        shape = self.catchment_shapes[0][0]
+
+        catchment_polygon = shapely_shape(shape)
+
+        for x, y in catchment_polygon.exterior.coords:
+            d = min(
+                [
+                    abs(self.max_x - x),
+                    abs(self.min_x - x),
+                    abs(self.max_y - y),
+                    abs(self.min_y - y),
+                ]
+            )
+            if d < 0.0002:  # the magic number
+                print(f"CLIPPED DETECTED: {y},{x} {d}")
+                return True
+        return False
+
+    async def export_geojson(self) -> str:
+        if not self.catchment_shapes:
+            raise
+
+        features = []
+
+        for shape in self.catchment_shapes:
+            geo_polygon = geojson.Polygon([(shape[0]["coordinates"][0])])
+            geo_polygon_feature = geojson.Feature(
+                geometry=geo_polygon, properties={"name": "Example Polygon"}
+            )
+            features.append(geo_polygon_feature)
+
+        filename = f"{self.outdir}/watershed - {self.name}.geojson"
+        with open(f"{filename}", "w") as f:
+            geojson.dump(geojson.FeatureCollection(features), f)
+        await self._log(f'GeoJSON generated: "{filename}"')
+        return filename
+
+    async def export_kml(self) -> str:
+        if not self.catchment_shapes:
+            raise
+
+        filename = f"{self.outdir}/watershed_-_{self.name}.kml"
+
+        kml = simplekml.Kml()
+        kml.newpoint(
+            name=f"Watershed Calculation Point - {self.name}",
+            coords=[(self.lon, self.lat)],
+        )
+
+        for shape in self.catchment_shapes:
+            poly = kml.newpolygon(name=f"Watershed - {self.name}")
+            poly.outerboundaryis = shape[0]["coordinates"][0]
+            poly.style.linestyle.color = simplekml.Color.blue
+            poly.style.linestyle.width = 1
+            poly.style.polystyle.color = simplekml.Color.changealphaint(
+                20, simplekml.Color.blue
+            )
+
+        kml.save(filename)
+        await self._log(f'KML generated: "{filename}"')
+        return filename
+
+
+async def handle_index(request):
+    return web.FileResponse("static/index.html")
+
+
+async def handle_submit(request):
+    if request.content_type == "application/json":
+        data = await request.json()
+    elif request.content_type == "application/x-www-form-urlencoded":
+        data = await request.post()
+    else:
+        return web.Response(text="Unsupported content type", status=400)
+
+    try:
+        coordinates = data["coordinates"]
+        lat, lon = map(float, coordinates.split(","))
+        name = data["name"]
+        expand_factor = float(data["expand_factor"])
+    except (KeyError, ValueError):
+        return web.Response(text="Invalid input", status=400)
+
+    ws = watershed(lat, lon, name, expand_factor)
+    await ws.work()
+
+
+    kml_url = urllib.parse.quote(
+        f"https://watershed.attack-kitten.com/{ws.kml}", safe=""
+    )
+
+    # Caltopo badly handles spaces in the kml url, even when they're encoded as %20. Instead
+    # you have to double-encode the "%" as "%25".
+    kml_url = kml_url.replace("%20", "%2520")
+
+    caltopo_url = f"http://caltopo.com/map.html#ll={lat},{lon}&z=13&kml={kml_url}"
+
+    print(caltopo_url)
+
+    response_content = f"""
+        <html>
+        <body>
+            <script type="text/javascript">
+        setTimeout(function(){{
+            window.open("{caltopo_url}", "_blank");
+        }}, 1);
+    </script>
+            <h1>Watershed Calculation Complete</h1>
+            <p><a href="{caltopo_url}">Open in Caltopo</a></p>
+        </body>
+        </html>
+        """
+
+    return web.Response(text=response_content, content_type="text/html")
+
+
+async def broadcast_message(message):
+    for ws in clients:
+        await ws.send_str(message)
+
+async def websocket_handler(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+
+    clients.append(ws)
+    await broadcast_message("new client!")
+    try:
+        async for msg in ws:
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                if msg.data == 'close':
+                    await ws.close()
+            elif msg.type == aiohttp.WSMsgType.ERROR:
+                print(f'WebSocket connection closed with exception {ws.exception()}')
+
+    finally:
+        clients.remove(ws)
+
+    return ws
+
+
+app = web.Application()
+app.router.add_get("/", handle_index)
+app.router.add_post("/", handle_submit)
+app.router.add_static(prefix="/output", path="output/", show_index=True)
+app.router.add_static(prefix="/static", path="static/", show_index=False)
+app.router.add_get("/ws", websocket_handler)
+
+OT_API_KEY = os.getenv("OT_API_KEY")
+clients = []
+
+if not OT_API_KEY:
+    print("Error: OT_API_KEY must be set (Opentopography.org API Key)")
+    sys.exit(1)
+
+if __name__ == "__main__":
+    web.run_app(app, host="okavango.ak", port=8080)

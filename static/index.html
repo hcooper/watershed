@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/favicon.png" type="image/x-icon">
+    <title>Watershed Calculator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #E0F7FA;
+            color: #01579B;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            color: #0288D1;
+        }
+
+        form {
+            background: #FFFFFF;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            width: 300px;
+            text-align: center;
+        }
+
+        #logo {
+            width: 280px;
+        }
+
+        label {
+            display: block;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        input[type="text"] {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin-top: 5px;
+            border: 1px solid #0288D1;
+            border-radius: 4px;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 10px 15px;
+            background-color: #0288D1;
+            border: none;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0277BD;
+        }
+    </style>
+<script>
+    function getQueryParams() {
+        let params = new URLSearchParams(window.location.search);
+        return {
+            lat: params.get('lat') || '47.94446',
+            lon: params.get('lon') || '-121.62362',
+            name: params.get('name') || 'Kromona Creek'
+        };
+    }
+
+    window.onload = function () {
+        let params = getQueryParams();
+        let coordinates = `${params.lat}, ${params.lon}`;
+        document.getElementById('coordinates').value = coordinates;
+        document.getElementById('name').value = params.name;
+
+        // WebSocket setup
+        const ws = new WebSocket('wss://watershed.attack-kitten.com/ws');
+        const logMessages = document.getElementById('logMessages');
+
+        ws.onmessage = function (event) {
+            const logMessage = document.createElement('div');
+            logMessage.textContent = event.data;
+            logMessages.appendChild(logMessage);
+            logMessages.scrollTop = logMessages.scrollHeight; // Auto-scroll to the bottom
+        };
+
+        ws.onerror = function (error) {
+            console.error('WebSocket error:', error);
+        };
+
+        ws.onclose = function () {
+            console.log('WebSocket connection closed');
+        };
+    };
+</script>
+
+</head>
+
+<body>
+    <form action="/" method="post">
+        <img id="logo" src="static/logo.webp">
+        <h1>Watershed Calculator</h1>
+        <label for="coordinates">Coordinates (lat, lon):</label>
+        <input type="text" id="coordinates" name="coordinates" required value="47.94446, -121.62362"><br>
+        <label for="name">Name:</label>
+        <input type="text" id="name" name="name" required value="Kromona Creek"><br>
+        <label for="expand_factor">Expand Factor:</label>
+        <input type="text" id="expand_factor" name="expand_factor" value="0.06" required><br>
+        <button type="submit">Submit</button>
+    </form>
+    <div id="logMessages" style="margin-top: 20px; width: 300px; height: 200px; overflow-y: auto; background: #FFFFFF; border: 1px solid #0288D1; border-radius: 4px; padding: 10px;"></div>
+</body>
+
+</html>
