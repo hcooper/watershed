@@ -6,99 +6,45 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="/static/favicon.png" type="image/x-icon">
     <link rel="stylesheet" type="text/css" href="/static/style.css">
+    <link rel="stylesheet" type="text/css" href="/static/spinner.css">
     <title>Watershed Calculator</title>
-    <script>
-        function getQueryParams() {
-            let params = new URLSearchParams(window.location.search);
-            return {
-                lat: params.get('lat') || '47.94446',
-                lon: params.get('lon') || '-121.62362',
-                name: params.get('name') || 'Kromona Creek'
-            };
-        }
-
-        window.onload = function () {
-            let params = getQueryParams();
-            let coordinates = `${params.lat}, ${params.lon}`;
-            document.getElementById('coordinates').value = coordinates;
-            document.getElementById('name').value = params.name;
-
-            // WebSocket setup
-            const ws = new WebSocket('wss://watershed.attack-kitten.com/ws');
-            const logMessages = document.getElementById('logMessages');
-
-            ws.onmessage = function (event) {
-                console.log(event.data);
-                // Check if the message starts with "id:"
-                if (event.data.startsWith("client_id:")) {
-                    client_id = event.data.split(":")[1]; // Extract the ID and assign it to client_id
-                    document.getElementById('client_id').value = client_id; // set form hidden value
-                } else if (event.data.startsWith("log:")) {
-                    document.getElementById('logMessages').style.visibility = 'visible';
-                    const logMessage = document.createElement('div');
-                    msg = event.data.split(":")[1];
-                    logMessage.textContent = msg;
-                    logMessages.appendChild(logMessage);
-                    logMessages.scrollTop = logMessages.scrollHeight; // Auto-scroll to the bottom
-                }
-            };
-
-            ws.onerror = function (error) {
-                console.error('WebSocket error:', error);
-            };
-
-            ws.onclose = function () {
-                console.log('WebSocket connection closed');
-            };
-
-            document.querySelector('form').onsubmit = function (e) {
-                e.preventDefault();
-
-                const formData = new FormData(e.target);
-                const data = {
-                    coordinates: formData.get('coordinates'),
-                    name: formData.get('name'),
-                    expand_factor: formData.get('expand_factor'),
-                    client_id: formData.get('client_id'),
-                };
-
-                fetch('/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(data)
-                }).then(response => response.text())
-                    .then(html => {
-                        document.getElementById('response').innerHTML = html;
-                    });
-            };
-
-        };
-
-
-
-    </script>
-
+    <script src="/static/sheed.js"></script>
 </head>
 
 <body>
-    <div>
-        <form action="/" method="post">
+    <div id="mainbox">
+        <div id="formbox" class="subbox">
+
             <img id="logo" src="static/logo.webp">
             <h1>Watershed Calculator</h1>
-            <input type="hidden" id="client_id" name="client_id">
-            <label for="coordinates">Coordinates (lat, lon):</label>
-            <input type="text" id="coordinates" name="coordinates" required value="47.94446, -121.62362"><br>
-            <label for="name">Name:</label>
-            <input type="text" id="name" name="name" required value="Kromona Creek"><br>
-            <label for="expand_factor">Expand Factor:</label>
-            <input type="text" id="expand_factor" name="expand_factor" value="0.06" required><br>
-            <button type="submit">Submit</button>
-        </form>
-        <div id="logMessages"></div>
-        <div id="response"></div>
+
+            <form action="/" method="post">
+                <input type="hidden" id="client_id" name="client_id">
+
+                <label for="coordinates">Coordinates (lat, lon):</label>
+                <input type="text" id="coordinates" name="coordinates" required value="47.94446, -121.62362"><br>
+
+                <a href="#" id="toggle-advanced">More Options</a>
+
+                <div id="advanced-section">
+                    <label for="name">Name:</label>
+                    <div class="help-text">A custom name, used in labels and filenames</div><br>
+                    <input type="text" id="name" name="name"><br>
+
+                    <label for="expand_factor">Expand Factor:</label>
+                    <div class="help-text">How large an area to model around your inital coordinates</div><br>
+                    <input type="text" id="expand_factor" name="expand_factor" value="0.06" required><br>
+                </div>
+
+                <button type="submit" id="submitbutton">Calculate!</button>
+            </form>
+
+        </div>
+
+        <div id="logbox" class="subbox"></div>
+        <div id="responsebox" class="subbox"></div>
     </div>
+
 </body>
 
 </html>
