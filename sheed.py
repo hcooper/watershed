@@ -222,6 +222,9 @@ async def handle_submit(request):
         name = data["name"]
         expand_factor = float(data["expand_factor"])
         client_id = data["client_id"]
+        if not name:
+            name = f"{lat}_{lon}_{expand_factor}"
+
     except (KeyError, ValueError):
         return web.Response(text="Invalid input", status=400)
 
@@ -236,7 +239,13 @@ async def handle_submit(request):
     # Caltopo badly handles spaces in the kml url, even when they're encoded as %20. Instead
     # you have to double-encode the "%" as "%25".
     kml_url = urllib.parse.quote(
-        f"https://watershed.attack-kitten.com/{watershed.kml}", safe=""
+
+    response_content += f"""
+        <a href='{caltopo_url}' class='button-link'>Open in Caltopo</a>
+        <div class="downloadlinks">
+            Download: <a href='{watershed.geojson}'>GeoJSON</a>, <a href='{watershed.kml}'>KML</a>
+        </div>
+        """
     ).replace("%20", "%2520")
     caltopo_url = f"http://caltopo.com/map.html#ll={lat},{lon}&z=13&kml={kml_url}"
     response_content += f"<a href='{caltopo_url}' class='button-link'>Open in Caltopo</a>"
