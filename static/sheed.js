@@ -92,4 +92,14 @@ window.onload = function () {
             this.textContent = 'Fewer Options';
         }
     });
+
+
+    document.getElementById('submitbutton').addEventListener('click', function (event) {
+        var responsebox = document.getElementById('responsebox');
+        responsebox.innerHTML = "";
+        responsebox.style.display = 'none';
+    });
+
+
+
 };
