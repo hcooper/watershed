@@ -67,6 +67,14 @@ class Watershed:
 
     async def get_dem(self) -> str:
         dataset = "USGS10m"
+
+        dem_filename = f"{self.outdir}/dem_{dataset}_{self.name}.tif"
+
+        # Use cached DEM if possible
+        if os.path.isfile(dem_filename):
+            await self._log(f"Using cached DEM {dem_filename}")
+            return dem_filename
+
         params = {
             "datasetName": dataset,
             "west": self.min_x,
