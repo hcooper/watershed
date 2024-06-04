@@ -35,16 +35,29 @@ def make_id() -> str:
 
 
 class Watershed:
-    def __init__(self, lat: float, lon: float, name: str, expand_factor: float, client_id):
+    def __init__(
+        self, lat: float, lon: float, name: str, expand_factor: float, client_id
+    ):
 
-        self.id = client_id #if client_id else make_id()
+        self.id = client_id  # if client_id else make_id()
         self.outdir = "output"
         os.makedirs(self.outdir, exist_ok=True)
-
+        
         self.lat = lat
         self.lon = lon
-        self.name = name
         self.expand_factor = expand_factor
+
+        if not name:
+            self._generate_default_name()
+        else:
+            self.name = name
+
+        self.generate_box()
+
+    def _generate_default_name(self):
+        self.name = f"{self.lat}_{self.lon}_{self.expand_factor}"
+
+    def generate_box(self):
         self.min_x, self.min_y, self.max_x, self.max_y = [
             round(self.lon - self.expand_factor, 5),
             round(self.lat - self.expand_factor, 5),
