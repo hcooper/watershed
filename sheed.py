@@ -74,6 +74,17 @@ class Watershed:
         self.dem_filename = await self.get_dem()
         self.catchment_shapes = await self.calculate_catchment()
         self.clipped = await self.clipping_check()
+
+        if self.clipped:
+            await self._log("Clipping detected, retrying with expand_factor=0.1")
+            self.expand_factor = 0.1
+            self.generate_box()
+            self._generate_default_name()
+
+            self.dem_filename = await self.get_dem()
+            self.catchment_shapes = await self.calculate_catchment()
+            self.clipped = await self.clipping_check()
+
         self.geojson = await self.export_geojson()
         self.kml = await self.export_kml()
         await self._log("Done!")
