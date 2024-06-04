@@ -254,8 +254,6 @@ async def handle_submit(request):
         name = data["name"]
         expand_factor = float(data["expand_factor"])
         client_id = data["client_id"]
-        if not name:
-            name = f"{lat}_{lon}_{expand_factor}"
 
     except (KeyError, ValueError):
         return web.Response(text="Invalid input", status=400)
