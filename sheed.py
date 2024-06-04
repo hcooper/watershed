@@ -247,16 +247,12 @@ async def handle_submit(request):
     # Caltopo badly handles spaces in the kml url, even when they're encoded as %20. Instead
     # you have to double-encode the "%" as "%25".
     kml_url = urllib.parse.quote(
-
-    response_content += f"""
-        <a href='{caltopo_url}' class='button-link'>Open in Caltopo</a>
-        <div class="downloadlinks">
-            Download: <a href='{watershed.geojson}'>GeoJSON</a>, <a href='{watershed.kml}'>KML</a>
-        </div>
-        """
+        f"https://watershed.attack-kitten.com/{watershed.kml}", safe=""
     ).replace("%20", "%2520")
     caltopo_url = f"http://caltopo.com/map.html#ll={lat},{lon}&z=13&kml={kml_url}"
-    response_content += f"<a href='{caltopo_url}' class='button-link'>Open in Caltopo</a>"
+    response_content += (
+        f"<a href='{caltopo_url}' class='button-link' target='_new'>Open in Caltopo</a>"
+    )
 
     return web.Response(text=response_content, content_type="text/html")
 
