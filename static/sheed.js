@@ -46,7 +46,7 @@ function setupWebSocket() {
 
 window.onload = function () {
     let params = getQueryParams();
-    let coordinates = `${params.lat}, ${params.lon}`;
+    let coordinates = (params.lat && params.lon) ? `${params.lat}, ${params.lon}` : '';
     document.getElementById('coordinates').value = coordinates;
     document.getElementById('name').value = params.name;
 
@@ -65,6 +65,7 @@ window.onload = function () {
             name: formData.get('name'),
             expand_factor: formData.get('expand_factor'),
             client_id: formData.get('client_id'),
+            dem: formData.get('dem'),
         };
 
         fetch('/', {

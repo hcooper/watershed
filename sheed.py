@@ -3,13 +3,11 @@ from pysheds.grid import Grid
 import numpy as np
 import simplekml
 import aiohttp
-import asyncio
 import logging
 import geojson
 import os
 import uuid
 from aiohttp import web
-import json
 from typing import List
 import sys
 import urllib.parse
@@ -36,7 +34,7 @@ def make_id() -> str:
 
 class Watershed:
     def __init__(
-        self, lat: float, lon: float, name: str, expand_factor: float, client_id
+        self, lat: float, lon: float, name: str, expand_factor: float, client_id, dem
     ):
 
         self.id = client_id  # if client_id else make_id()
@@ -46,6 +44,7 @@ class Watershed:
         self.lat = lat
         self.lon = lon
         self.expand_factor = expand_factor
+        self.dem = dem
 
         if not name:
             self._generate_default_name()
@@ -90,7 +89,7 @@ class Watershed:
         await self._log("Done!")
 
     async def get_dem(self) -> str:
-        dataset = "USGS10m"
+        dataset = self.dem
 
         dem_filename = f"{self.outdir}/dem_{dataset}_{self.name}.tif"
 
@@ -254,11 +253,12 @@ async def handle_submit(request):
         name = data["name"]
         expand_factor = float(data["expand_factor"])
         client_id = data["client_id"]
+        dem = data["dem"]
 
     except (KeyError, ValueError):
         return web.Response(text="Invalid input", status=400)
 
-    watershed = Watershed(lat, lon, name, expand_factor, client_id)
+    watershed = Watershed(lat, lon, name, expand_factor, client_id, dem)
     await watershed.work()
 
     response_content = ""
@@ -310,6 +310,15 @@ async def websocket_handler(request):
 
     return ws
 
+OT_API_KEY = os.getenv("OT_API_KEY")
+if not OT_API_KEY:
+    print("Error: OT_API_KEY must be set (Opentopography.org API Key)")
+    sys.exit(1)
+
+os.makedirs("output/", exist_ok=True)
+os.makedirs("static/", exist_ok=True)
+
+print("Directories made")
 
 app = web.Application()
 app.router.add_get("/", handle_index)
@@ -318,12 +327,8 @@ app.router.add_static(prefix="/output", path="output/", show_index=True)
 app.router.add_static(prefix="/static", path="static/", show_index=False)
 app.router.add_get("/ws", websocket_handler)
 
-OT_API_KEY = os.getenv("OT_API_KEY")
 clients = {}
 
-if not OT_API_KEY:
-    print("Error: OT_API_KEY must be set (Opentopography.org API Key)")
-    sys.exit(1)
-
 if __name__ == "__main__":
-    web.run_app(app, host="okavango.ak", port=8080, access_log=access_log)
+    print("Starting web...")
+    web.run_app(app, port=8080, access_log=access_log)

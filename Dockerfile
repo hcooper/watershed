@@ -1,5 +1,9 @@
-FROM python:3.9-slim
+FROM python:3-slim
 WORKDIR /app
-COPY . /app
-RUN pip install --no-cache-dir -r requirements.txt
+COPY sheed.py requirements.txt /app/
+COPY static /app/static
+RUN pip3 install --no-cache-dir -r requirements.txt
+# Prime the python cache
+RUN python3 -c "from pysheds.grid import Grid"
+EXPOSE 8080
 CMD ["python", "sheed.py"]
