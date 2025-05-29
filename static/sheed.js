@@ -8,7 +8,7 @@ function getQueryParams() {
 }
 
 function setupWebSocket() {
-    const ws = new WebSocket('wss://watershed.attack-kitten.com/ws');
+    const ws = new WebSocket(`wss://${location.host}/ws`);
     const logMessages = document.getElementById('logbox');
 
     ws.onopen = function () {
