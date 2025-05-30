@@ -35,13 +35,19 @@ def make_id() -> str:
 
 class Watershed:
     def __init__(
-        self, lat: float, lon: float, name: str, expand_factor: float, client_id, dem, snap
+        self,
+        lat: float,
+        lon: float,
+        name: str,
+        expand_factor: float,
+        client_id,
+        dem,
+        snap,
     ):
-
         self.id = client_id  # if client_id else make_id()
         self.outdir = "output"
         os.makedirs(self.outdir, exist_ok=True)
-        
+
         self.lat = lat
         self.lon = lon
         self.expand_factor = expand_factor
@@ -152,14 +158,20 @@ class Watershed:
 
         if self.snap:
             # Snap pour point to high accumulation cell
-            x, y = grid.snap_to_mask(acc > 1000, (self.lon, self.lat))
+            self.snapped_x, self.snapped_y = grid.snap_to_mask(
+                acc > 1000, (self.lon, self.lat)
+            )
+            catch = grid.catchment(
+                x=self.snapped_x,
+                y=self.snapped_y,
+                fdir=fdir,
+                dirmap=dirmap,
+                xytype="coordinate",
+            )
         else:
-            x, y = self.lon, self.lat
-
-        # Delineate the catchment
-        catch = grid.catchment(
-            x=x, y=y, fdir=fdir, dirmap=dirmap, xytype="coordinate"
-        )
+            catch = grid.catchment(
+                x=self.lon, y=self.lat, fdir=fdir, dirmap=dirmap, xytype="coordinate"
+            )
 
         grid.clip_to(catch)
         catch_view = grid.view(catch, dtype=np.uint8)
@@ -220,9 +232,15 @@ class Watershed:
 
         kml = simplekml.Kml()
         kml.newpoint(
-            name=f"Watershed Calculation Point - {self.name}",
+            name=f"Requested Point - {self.name}",
             coords=[(self.lon, self.lat)],
         )
+
+        if self.snapped_x and self.snapped_y:
+            kml.newpoint(
+                name=f"Snapped Point - {self.name}",
+                coords=[(self.snapped_x, self.snapped_y)],
+            )
 
         for shape in self.catchment_shapes:
             poly = kml.newpolygon(name=f"Watershed - {self.name}")
@@ -269,17 +287,17 @@ async def handle_submit(request):
 
     response_content = {}
 
-    response_content['clipped'] = watershed.clipped
-    response_content['dem'] = watershed.dem
-    response_content['expand_factor'] = watershed.expand_factor
-    response_content['geojson'] = watershed.geojson
-    response_content['kml'] = watershed.kml
-    response_content['lat'] = watershed.lat
-    response_content['lon'] = watershed.lon
-    response_content['name'] = watershed.name
+    response_content["clipped"] = watershed.clipped
+    response_content["dem"] = watershed.dem
+    response_content["expand_factor"] = watershed.expand_factor
+    response_content["geojson"] = watershed.geojson
+    response_content["kml"] = watershed.kml
+    response_content["lat"] = watershed.lat
+    response_content["lon"] = watershed.lon
+    response_content["name"] = watershed.name
 
     # if watershed.clipped:python
-        # response_content += "<div class='warning'>Warning: clipping was detected!</div>"
+    # response_content += "<div class='warning'>Warning: clipping was detected!</div>"
 
     # Caltopo badly handles spaces in the kml url, even when they're encoded as %20. Instead
     # you have to double-encode the "%" as "%25".
@@ -324,6 +342,7 @@ async def websocket_handler(request):
         clients.pop(client_id)
 
     return ws
+
 
 OT_API_KEY = os.getenv("OT_API_KEY")
 if not OT_API_KEY:
