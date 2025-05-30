@@ -76,6 +76,7 @@ window.onload = function () {
             expand_factor: formData.get('expand_factor'),
             client_id: formData.get('client_id'),
             dem: formData.get('dem'),
+            snap: formData.get('snap') ? 1 : 0,
         };
 
         fetch('/', {

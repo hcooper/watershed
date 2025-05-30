@@ -35,7 +35,7 @@ def make_id() -> str:
 
 class Watershed:
     def __init__(
-        self, lat: float, lon: float, name: str, expand_factor: float, client_id, dem
+        self, lat: float, lon: float, name: str, expand_factor: float, client_id, dem, snap
     ):
 
         self.id = client_id  # if client_id else make_id()
@@ -46,6 +46,7 @@ class Watershed:
         self.lon = lon
         self.expand_factor = expand_factor
         self.dem = dem
+        self.snap = snap
 
         if not name:
             self._generate_default_name()
@@ -149,12 +150,15 @@ class Watershed:
         fdir = grid.flowdir(inflated_dem, dirmap=dirmap)
         acc = grid.accumulation(fdir, dirmap=dirmap)
 
-        # Snap pour point to high accumulation cell
-        x_snap, y_snap = grid.snap_to_mask(acc > 1000, (self.lon, self.lat))
+        if self.snap:
+            # Snap pour point to high accumulation cell
+            x, y = grid.snap_to_mask(acc > 1000, (self.lon, self.lat))
+        else:
+            x, y = self.lon, self.lat
 
         # Delineate the catchment
         catch = grid.catchment(
-            x=x_snap, y=y_snap, fdir=fdir, dirmap=dirmap, xytype="coordinate"
+            x=x, y=y, fdir=fdir, dirmap=dirmap, xytype="coordinate"
         )
 
         grid.clip_to(catch)
@@ -247,7 +251,7 @@ async def handle_submit(request):
         data = await request.post()
     else:
         return web.Response(text="Unsupported content type", status=400)
-
+    print(data)
     try:
         coordinates = data["coordinates"]
         lat, lon = map(float, coordinates.split(","))
@@ -255,11 +259,12 @@ async def handle_submit(request):
         expand_factor = float(data["expand_factor"])
         client_id = data["client_id"]
         dem = data["dem"]
+        snap = data["snap"]
 
     except (KeyError, ValueError):
         return web.Response(text="Invalid input", status=400)
 
-    watershed = Watershed(lat, lon, name, expand_factor, client_id, dem)
+    watershed = Watershed(lat, lon, name, expand_factor, client_id, dem, snap)
     await watershed.work()
 
     response_content = {}
