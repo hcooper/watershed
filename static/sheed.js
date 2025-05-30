@@ -8,41 +8,51 @@ function getQueryParams() {
 }
 
 function setupWebSocket() {
-    const ws = new WebSocket(`wss://${location.host}/ws`);
-    const logMessages = document.getElementById('logbox');
+    let ws;
 
-    ws.onopen = function () {
-        console.log('WebSocket connection opened');
-    };
+    if (location.protocol === 'https:') {
+        ws = new WebSocket(`wss://${location.host}/ws`);
+    } else {
+        ws = new WebSocket(`ws://${location.host}/ws`);
+    }
+    
+    attachHandlers(ws);
 
-    ws.onmessage = function (event) {
-        console.log(event.data);
+    function attachHandlers(ws) {
+        const logMessages = document.getElementById('logbox');
 
-        if (event.data.startsWith("client_id:")) {
-            const client_id = event.data.split(":")[1];
-            document.getElementById('client_id').value = client_id; // set form hidden value
+        ws.onopen = function () {
+            console.log('WebSocket connection opened');
+        };
 
-        } else if (event.data.startsWith("log:")) {
-            document.getElementById('logbox').style.display = 'block';
-            const logMessage = document.createElement('div');
-            const msg = event.data.split(":")[1];
-            logMessage.textContent = msg;
-            logMessages.appendChild(logMessage);
-            logMessages.scrollTop = logMessages.scrollHeight; // Auto-scroll to the bottom
-        }
-    };
+        ws.onmessage = function (event) {
+            console.log(event.data);
 
-    ws.onerror = function (error) {
-        console.error('WebSocket error:', error);
-    };
+            if (event.data.startsWith("client_id:")) {
+                const client_id = event.data.split(":")[1];
+                document.getElementById('client_id').value = client_id;
 
-    ws.onclose = function () {
-        console.log('WebSocket connection closed, retrying...');
-        setTimeout(setupWebSocket, 1000); // Retry connection after 1 second
-    };
+            } else if (event.data.startsWith("log:")) {
+                document.getElementById('logbox').style.display = 'block';
+                const logMessage = document.createElement('div');
+                const msg = event.data.split(":")[1];
+                logMessage.textContent = msg;
+                logMessages.appendChild(logMessage);
+                logMessages.scrollTop = logMessages.scrollHeight;
+            }
+        };
 
-    return ws;
+        ws.onerror = function (error) {
+            console.error('WebSocket error:', error);
+        };
+
+        ws.onclose = function () {
+            console.log('WebSocket connection closed, retrying...');
+            setTimeout(setupWebSocket, 1000);
+        };
+    }
 }
+
 
 window.onload = function () {
     let params = getQueryParams();
@@ -74,10 +84,18 @@ window.onload = function () {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(data)
-        }).then(response => response.text())
-            .then(html => {
+        }).then(response => response.json())
+            .then(data => {
                 var responsebox = document.getElementById('responsebox');
-                responsebox.innerHTML = html;
+                // Caltopo badly handles spaces in the kml url, even when they're encoded as %20. Instead
+                // you have to double-encode the "%" as "%25".
+                // let t = "https://ropewiki.com/images/d/d6/Eagle_Creek.kml?ts=1748569712807";
+                let kml_url = encodeURIComponent(`${location.origin}/${data['kml']}`).replace(/%20/g, '%2520');
+                // let kml_url = encodeURIComponent(`${t}`).replace(/%20/g, '%2520');
+                let captopo_url = `https://caltopo.com/map.html#ll=${data['lat']},${data['lon']}&z=13&kml=${kml_url}`;
+
+                responsebox.innerHTML = `Download: <a target="_blank" href="${location.host}/${data['kml']}">KML</a> | <a target="_blank" href="${location.host}/${data['geojson']}">GeoJSON</a>
+                    <br><a target="_blank" href="${captopo_url}">Open in CalTopo</a>`;
                 responsebox.style.display = 'block';
             });
     };

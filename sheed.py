@@ -12,6 +12,7 @@ from typing import List
 import sys
 import urllib.parse
 from shapely.geometry import shape as shapely_shape
+import json
 
 logging.basicConfig(
     level=logging.INFO,
@@ -261,22 +262,31 @@ async def handle_submit(request):
     watershed = Watershed(lat, lon, name, expand_factor, client_id, dem)
     await watershed.work()
 
-    response_content = ""
+    response_content = {}
 
-    if watershed.clipped:
-        response_content += "<div class='warning'>Warning: clipping was detected!</div>"
+    response_content['clipped'] = watershed.clipped
+    response_content['dem'] = watershed.dem
+    response_content['expand_factor'] = watershed.expand_factor
+    response_content['geojson'] = watershed.geojson
+    response_content['kml'] = watershed.kml
+    response_content['lat'] = watershed.lat
+    response_content['lon'] = watershed.lon
+    response_content['name'] = watershed.name
+
+    # if watershed.clipped:python
+        # response_content += "<div class='warning'>Warning: clipping was detected!</div>"
 
     # Caltopo badly handles spaces in the kml url, even when they're encoded as %20. Instead
     # you have to double-encode the "%" as "%25".
-    kml_url = urllib.parse.quote(
-        f"https://watershed.attack-kitten.com/{watershed.kml}", safe=""
-    ).replace("%20", "%2520")
-    caltopo_url = f"http://caltopo.com/map.html#ll={lat},{lon}&z=13&kml={kml_url}"
-    response_content += (
-        f"<a href='{caltopo_url}' class='button-link' target='_new'>Open in Caltopo</a>"
-    )
+    # kml_url = urllib.parse.quote(
+    #     f"https://watershed.attack-kitten.com/{watershed.kml}", safe=""
+    # ).replace("%20", "%2520")
+    # caltopo_url = f"http://caltopo.com/map.html#ll={lat},{lon}&z=13&kml={kml_url}"
+    # response_content += (
+    #     f"<a href='{caltopo_url}' class='button-link' target='_new'>Open in Caltopo</a>"
+    # )
 
-    return web.Response(text=response_content, content_type="text/html")
+    return web.Response(text=json.dumps(response_content), content_type="text/json")
 
 
 async def broadcast_message(message, client_id=None) -> None:
