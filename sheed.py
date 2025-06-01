@@ -8,11 +8,11 @@ import geojson
 import os
 import uuid
 from aiohttp import web
-from typing import List
+from typing import List, Union, cast
 import sys
 import urllib.parse
-from shapely.geometry import shape as shapely_shape
 import json
+from shapely.geometry import shape as shapely_shape, Polygon
 
 logging.basicConfig(
     level=logging.INFO,
@@ -189,7 +189,7 @@ class Watershed:
 
         shape = self.catchment_shapes[0][0]
 
-        catchment_polygon = shapely_shape(shape)
+        catchment_polygon = cast(Polygon, shapely_shape(shape))
 
         for x, y in catchment_polygon.exterior.coords:
             d = min(
@@ -286,7 +286,6 @@ async def handle_submit(request):
     await watershed.work()
 
     response_content = {}
-
     response_content["clipped"] = watershed.clipped
     response_content["dem"] = watershed.dem
     response_content["expand_factor"] = watershed.expand_factor
@@ -295,19 +294,6 @@ async def handle_submit(request):
     response_content["lat"] = watershed.lat
     response_content["lon"] = watershed.lon
     response_content["name"] = watershed.name
-
-    # if watershed.clipped:python
-    # response_content += "<div class='warning'>Warning: clipping was detected!</div>"
-
-    # Caltopo badly handles spaces in the kml url, even when they're encoded as %20. Instead
-    # you have to double-encode the "%" as "%25".
-    # kml_url = urllib.parse.quote(
-    #     f"https://watershed.attack-kitten.com/{watershed.kml}", safe=""
-    # ).replace("%20", "%2520")
-    # caltopo_url = f"http://caltopo.com/map.html#ll={lat},{lon}&z=13&kml={kml_url}"
-    # response_content += (
-    #     f"<a href='{caltopo_url}' class='button-link' target='_new'>Open in Caltopo</a>"
-    # )
 
     return web.Response(text=json.dumps(response_content), content_type="text/json")
 
@@ -361,7 +347,7 @@ app.router.add_static(prefix="/output", path="output/", show_index=True)
 app.router.add_static(prefix="/static", path="static/", show_index=False)
 app.router.add_get("/ws", websocket_handler)
 
-clients = {}
+clients: dict[str, web.WebSocketResponse] = {}
 
 if __name__ == "__main__":
     print("Starting web...")
