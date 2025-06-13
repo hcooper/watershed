@@ -66,8 +66,12 @@ window.onload = function () {
     document.querySelector('form').onsubmit = function (e) {
         e.preventDefault();
 
-        // spinner = document.getElementsByClassName('lds-ripple')[0];
-        // spinner.style.display = "block";
+        const submitButton = document.getElementById('submitbutton');
+        const originalText = submitButton.innerHTML;
+        
+        // Show spinner and disable button
+        submitButton.innerHTML = '<span class="spinner"></span>Calculating...';
+        submitButton.disabled = true;
 
         const formData = new FormData(e.target);
         const data = {
@@ -96,9 +100,22 @@ window.onload = function () {
                 // let kml_url = encodeURIComponent(`${t}`).replace(/%20/g, '%2520');
                 let captopo_url = `https://caltopo.com/map.html#ll=${data['lat']},${data['lon']}&z=13&kml=${kml_url}`;
 
-                responsebox.innerHTML = `Download: <a target="_blank" href="${location.origin}/${data['kml']}">KML</a> | <a target="_blank" href="${location.origin}/${data['geojson']}">GeoJSON</a>
-                    <br><a target="_blank" href="${captopo_url}">Open in CalTopo</a>`;
+                responsebox.innerHTML = `<b>Download:</b><br>
+                    <a target="_blank" href="${location.origin}/${data['kml']}">
+                    <img src="static/kml.png" width="60px" alt="kml" style="padding: 10px;"></a>
+                        <a target="_blank" href="${location.origin}/${data['geojson']}">
+                    <img src="static/geojson.png" width="60px"  style="padding: 10px;"alt="geojson"></a><br>
+                    <iframe id="caltopoMap" src="${captopo_url}"></iframe>
+                    `;
                 responsebox.style.display = 'block';
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            })
+            .finally(() => {
+                // Restore button state
+                submitButton.innerHTML = originalText;
+                submitButton.disabled = false;
             });
     };
 
@@ -119,6 +136,11 @@ window.onload = function () {
         var responsebox = document.getElementById('responsebox');
         responsebox.innerHTML = "";
         responsebox.style.display = 'none';
+    });
+
+    // Update expand factor value display
+    document.getElementById('expand_factor').addEventListener('input', function (event) {
+        document.getElementById('expand_factor_value').textContent = event.target.value;
     });
 
 
