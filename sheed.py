@@ -53,6 +53,8 @@ class Watershed:
         self.expand_factor = expand_factor
         self.dem = dem
         self.snap = snap
+        self.snapped_x = None
+        self.snapped_y = None
 
         if not name:
             self._generate_default_name()

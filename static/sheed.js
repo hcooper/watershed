@@ -91,11 +91,12 @@ window.onload = function () {
                 // Caltopo badly handles spaces in the kml url, even when they're encoded as %20. Instead
                 // you have to double-encode the "%" as "%25".
                 // let t = "https://ropewiki.com/images/d/d6/Eagle_Creek.kml?ts=1748569712807";
-                let kml_url = encodeURIComponent(`${location.origin}/${data['kml']}`).replace(/%20/g, '%2520');
+                // let kml_url = encodeURIComponent(`${location.origin}/${data['kml']}`).replace(/%20/g, '%2520');
+                let kml_url = `${location.origin}/${data['kml']}`;
                 // let kml_url = encodeURIComponent(`${t}`).replace(/%20/g, '%2520');
                 let captopo_url = `https://caltopo.com/map.html#ll=${data['lat']},${data['lon']}&z=13&kml=${kml_url}`;
 
-                responsebox.innerHTML = `Download: <a target="_blank" href="${location.host}/${data['kml']}">KML</a> | <a target="_blank" href="${location.host}/${data['geojson']}">GeoJSON</a>
+                responsebox.innerHTML = `Download: <a target="_blank" href="${location.origin}/${data['kml']}">KML</a> | <a target="_blank" href="${location.origin}/${data['geojson']}">GeoJSON</a>
                     <br><a target="_blank" href="${captopo_url}">Open in CalTopo</a>`;
                 responsebox.style.display = 'block';
             });
