@@ -98,7 +98,7 @@ window.onload = function () {
                 // let kml_url = encodeURIComponent(`${location.origin}/${data['kml']}`).replace(/%20/g, '%2520');
                 let kml_url = `${location.origin}/${data['kml']}`;
                 // let kml_url = encodeURIComponent(`${t}`).replace(/%20/g, '%2520');
-                let captopo_url = `https://caltopo.com/map.html#ll=${data['lat']},${data['lon']}&z=13&kml=${kml_url}`;
+                let captopo_url = `https://caltopo.com/map.html#ll=${data['lat']},${data['lon']}&z=13&b=mbt&kml=${kml_url}`;
 
                 responsebox.innerHTML = `<b>Download:</b><br>
                     <a target="_blank" href="${location.origin}/${data['kml']}">
