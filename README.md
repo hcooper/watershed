@@ -19,3 +19,19 @@ DEMs currently supported:
 
 Coverage maps on the respective pages linked above.
 </p>
+
+## Running as a systemd user service
+
+A `watershed.service` unit file is included for running under systemd as a user service.
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp watershed.service ~/.config/systemd/user/
+# edit the file to set OT_API_KEY=...
+systemctl --user daemon-reload
+systemctl --user enable --now watershed
+```
+
+View logs with `journalctl --user -u watershed -f`.
+
+The unit assumes the repo is checked out at `~/watershed` with a venv at `~/watershed/venv`.
