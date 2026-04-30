@@ -351,12 +351,19 @@ os.makedirs("static/", exist_ok=True)
 
 print("Directories made")
 
+async def close_websockets(app):
+    for ws in list(clients.values()):
+        await ws.close(code=1001, message=b"Server shutting down")
+    clients.clear()
+
+
 app = web.Application()
 app.router.add_get("/", handle_index)
 app.router.add_post("/", handle_submit)
 app.router.add_static(prefix="/output", path="output/", show_index=True)
 app.router.add_static(prefix="/static", path="static/", show_index=False)
 app.router.add_get("/ws", websocket_handler)
+app.on_shutdown.append(close_websockets)
 
 clients: dict[str, web.WebSocketResponse] = {}
 
