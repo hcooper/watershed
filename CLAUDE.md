@@ -12,7 +12,7 @@ Watershed is a Python web application that calculates watershed catchments from 
 ```bash
 python sheed.py
 ```
-Starts the web server on port 8080. Requires OT_API_KEY environment variable (OpenTopography API key).
+Starts the web server on port 8080. No API key required (DEMs fetched directly from USGS 3DEP).
 
 ### Dependencies
 ```bash
@@ -22,7 +22,7 @@ pip install -r requirements.txt
 ### Docker Deployment
 ```bash
 docker build -t watershed .
-docker run -p 8080:8080 -e OT_API_KEY=your_key watershed
+docker run -p 8080:8080 watershed
 ```
 
 ### Fly.io Deployment
@@ -51,7 +51,7 @@ App is configured for the 'sea' region with 1GB memory.
 ### Data Flow
 
 1. User submits coordinates via web form
-2. System fetches DEM data from OpenTopography API
+2. System fetches DEM data from USGS 3DEP ImageServer
 3. pysheds processes DEM for flow direction and accumulation
 4. Watershed catchment is calculated using flow algorithms
 5. Clipping detection checks if watershed extends beyond DEM bounds
@@ -61,7 +61,7 @@ App is configured for the 'sea' region with 1GB memory.
 
 ### Configuration
 
-- OT_API_KEY environment variable required for OpenTopography API access
+- DEMs fetched directly from USGS 3DEP ImageServer (no API key)
 - Output files stored in `/output/` directory
 - WebSocket client management for real-time progress updates
 - Snap-to-river functionality moves calculation point to nearest high-accumulation cell

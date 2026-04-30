@@ -9,7 +9,6 @@ import os
 import uuid
 from aiohttp import web
 from typing import List, Union, cast
-import sys
 import urllib.parse
 import json
 from shapely.geometry import shape as shapely_shape, Polygon
@@ -108,23 +107,31 @@ class Watershed:
             await self._log(f"Using cached DEM {dem_filename}")
             return dem_filename
 
+        # Match the source's native arc-second grid so output cells are square
+        # in degrees — pysheds' D8 flow direction assumes square pixels, and a
+        # cos(lat) correction here gave non-square cells that snapped to the
+        # wrong drainage.
+        arcsec_per_cell = {"USGS30m": 1.0, "USGS10m": 1.0 / 3.0}[dataset]
+        deg_per_cell = arcsec_per_cell / 3600.0
+        width_px = max(1, round((self.max_x - self.min_x) / deg_per_cell))
+        height_px = max(1, round((self.max_y - self.min_y) / deg_per_cell))
+
         params = {
-            "datasetName": dataset,
-            "west": self.min_x,
-            "south": self.min_y,
-            "east": self.max_x,
-            "north": self.max_y,
-            "outputFormat": "GTiff",
-            "API_Key": OT_API_KEY,
+            "bbox": f"{self.min_x},{self.min_y},{self.max_x},{self.max_y}",
+            "bboxSR": "4326",
+            "imageSR": "4326",
+            "size": f"{width_px},{height_px}",
+            "format": "tiff",
+            "pixelType": "F32",
+            "noData": "-9999",
+            "interpolation": "RSP_NearestNeighbor",
+            "f": "image",
         }
 
-        dem_filename = f"{self.outdir}/dem_{dataset}_{self.name}.tif"
-
-        # Construct the API URL
-        base_url = "https://portal.opentopography.org/API/usgsdem"
+        base_url = "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage"
 
         await self._log(
-            f"Fetching {dataset} DEM centered on {self.lat},{self.lon} from opentopography.org..."
+            f"Fetching {dataset} DEM ({width_px}x{height_px} px) centered on {self.lat},{self.lon} from USGS 3DEP..."
         )
 
         async with aiohttp.ClientSession() as session:
@@ -331,11 +338,6 @@ async def websocket_handler(request):
 
     return ws
 
-
-OT_API_KEY = os.getenv("OT_API_KEY")
-if not OT_API_KEY:
-    print("Error: OT_API_KEY must be set (Opentopography.org API Key)")
-    sys.exit(1)
 
 os.makedirs("output/", exist_ok=True)
 os.makedirs("static/", exist_ok=True)

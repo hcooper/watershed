@@ -6,18 +6,16 @@
 
 A system for automatically calculating the watershed catchment from a set of coordinates.
 
-Leverages digital elevation models (DEMs) accessed via [OpenTopography](https://opentopography.org/).
+Leverages digital elevation models (DEMs) from [USGS 3DEP](https://www.usgs.gov/3d-elevation-program), fetched directly from the National Map ImageServer.
 
 Outputs KML & GeoJson files, useful for importing into other tools.
 
 Tries to integrate with [CalTopo](https://caltopo.com/) (e.g. importing initial coordinates, automatically load exported kml).
 
-DEMs currently supported:
+DEMs currently supported (both via USGS 3DEP, US coverage):
 
-* [USGS10m 1/3 arc-second](https://portal.opentopography.org/datasetMetadata?otCollectionID=OT.012021.4269.1]) (covers ~USA)
-* [USGS30m 1 arc-second](https://portal.opentopography.org/datasetMetadata?otCollectionID=OT.012021.4269.2) (covers ~North America)
-
-Coverage maps on the respective pages linked above.
+* `USGS10m` — 1/3 arc-second (~10 m/px)
+* `USGS30m` — 1 arc-second (~30 m/px)
 </p>
 
 ## Running as a systemd user service
@@ -27,7 +25,6 @@ A `watershed.service` unit file is included for running under systemd as a user 
 ```bash
 mkdir -p ~/.config/systemd/user
 cp watershed.service ~/.config/systemd/user/
-# edit the file to set OT_API_KEY=...
 systemctl --user daemon-reload
 systemctl --user enable --now watershed
 ```

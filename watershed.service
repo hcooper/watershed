@@ -5,7 +5,6 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=%h/watershed
-Environment=OT_API_KEY=
 ExecStart=%h/watershed/venv/bin/python %h/watershed/sheed.py
 Restart=on-failure
 RestartSec=5
