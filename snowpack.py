@@ -1,177 +1,262 @@
+#!/usr/bin/env python3
 import argparse
-import datetime
+import asyncio
+import hashlib
+import io
 import json
+import math
 import os
 import sys
+import time
 
-import geopandas as gpd
-import matplotlib.pyplot as plt
-import numpy as np
+import aiohttp
 from dotenv import load_dotenv
-from rasterio.io import MemoryFile
-from sentinelhub.api.process import SentinelHubRequest
-from sentinelhub.config import SHConfig
-from sentinelhub.constants import CRS, MimeType
-from sentinelhub.data_collections import DataCollection
-from sentinelhub.download.sentinelhub_client import SentinelHubDownloadClient
-from sentinelhub.geo_utils import bbox_to_dimensions
-from sentinelhub.geometry import BBox, Geometry
+from PIL import Image, ImageDraw
 
 
-EVALSCRIPT = """
-//VERSION=3
-function setup() {
-  return {
-    input: ["B03", "B11", "B04", "B02", "dataMask"],
-    output: [
-      { id: "true_color", bands: 4 },
-      { id: "ndsi", bands: 4 }
-    ]
-  };
-}
+load_dotenv()
 
-function evaluatePixel(samples) {
-    let val = index(samples.B03, samples.B11);
-
-    true_color = [2.5*samples.B04, 2.5*samples.B03, 2.5*samples.B02, samples.dataMask];
-
-    if (val > 0.42)
-      ndsi = [0, 0.2, 1, samples.dataMask];  // highlight snow
-    else
-      ndsi = true_color;
-
-    return {
-      true_color: true_color,
-      ndsi: ndsi,
-    };
-}
-"""
+TILE_URL_TEMPLATE = "https://caltopo.com/tile/sentinel_{layer}-{timestamp}/{z}/{x}/{y}.png"
+SECONDS_PER_DAY = 86400
+LAYERS = ("tc", "fc", "ag", "burn")
+DEFAULT_LAYER = "tc"
+TILE_SIZE = 256
+DEFAULT_ZOOM = 14
+RADIUS_KM = 2.0
+USER_AGENT = "watershed-snowpack/1.0"
+CONCURRENCY = 8
+CALTOPO_COOKIE = os.environ.get("CALTOPO_COOKIE")
 
 
-def _date_range(start: datetime.date, end: datetime.date) -> list[str]:
-    assert end > start
-    return [
-        (start + datetime.timedelta(days=x)).strftime("%Y-%m-%d")
-        for x in range((end - start).days + 1)
-    ]
+def lonlat_to_tile(lon: float, lat: float, zoom: int) -> tuple[float, float]:
+    n = 2 ** zoom
+    x = (lon + 180.0) / 360.0 * n
+    lat_rad = math.radians(lat)
+    y = (1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n
+    return x, y
 
 
-def _watershed_bbox(geojson_path: str) -> tuple[BBox, gpd.GeoDataFrame]:
-    river_gdf = gpd.read_file(geojson_path).to_crs("WGS84")
-    with open(geojson_path) as f:
-        coords = json.load(f)["features"][0]["geometry"]["coordinates"][0]
+def lonlat_to_pixel(
+    lon: float, lat: float, zoom: int, west: float, north: float
+) -> tuple[float, float]:
+    x_tile, y_tile = lonlat_to_tile(lon, lat, zoom)
+    x_nw, y_nw = lonlat_to_tile(west, north, zoom)
+    return (x_tile - x_nw) * TILE_SIZE, (y_tile - y_nw) * TILE_SIZE
+
+
+def bbox_around_point(
+    lat: float, lon: float, radius_km: float
+) -> tuple[float, float, float, float]:
+    dlat = radius_km / 111.32
+    dlon = radius_km / (111.32 * math.cos(math.radians(lat)))
+    return lon - dlon, lat - dlat, lon + dlon, lat + dlat
+
+
+def load_geojson_polygon(path: str) -> list[tuple[float, float]]:
+    with open(path) as f:
+        data = json.load(f)
+    if data["type"] == "FeatureCollection":
+        geom = data["features"][0]["geometry"]
+    elif data["type"] == "Feature":
+        geom = data["geometry"]
+    else:
+        geom = data
+    if geom["type"] == "Polygon":
+        return geom["coordinates"][0]
+    if geom["type"] == "MultiPolygon":
+        return geom["coordinates"][0][0]
+    raise ValueError(f"unsupported geometry type: {geom['type']}")
+
+
+def polygon_bbox(
+    coords: list[tuple[float, float]],
+) -> tuple[float, float, float, float]:
     lons = [c[0] for c in coords]
     lats = [c[1] for c in coords]
-    bbox = BBox(
-        bbox=[(min(lons), max(lats)), (max(lons), min(lats))],
-        crs=CRS.WGS84,
+    return min(lons), min(lats), max(lons), max(lats)
+
+
+async def fetch_tile(
+    session: aiohttp.ClientSession,
+    sem: asyncio.Semaphore,
+    layer: str,
+    timestamp: int,
+    z: int,
+    x: int,
+    y: int,
+) -> tuple[int, int, bytes]:
+    url = TILE_URL_TEMPLATE.format(layer=layer, timestamp=timestamp, z=z, x=x, y=y)
+    async with sem, session.get(url) as resp:
+        resp.raise_for_status()
+        return x, y, await resp.read()
+
+
+def stitch(
+    tiles: list[tuple[int, int, bytes]],
+    x_min: int,
+    y_min: int,
+    cols: int,
+    rows: int,
+) -> Image.Image:
+    mosaic = Image.new("RGB", (cols * TILE_SIZE, rows * TILE_SIZE))
+    for x, y, data in tiles:
+        tile = Image.open(io.BytesIO(data))
+        mosaic.paste(tile, ((x - x_min) * TILE_SIZE, (y - y_min) * TILE_SIZE))
+    return mosaic
+
+
+async def fetch_bbox(
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+    layer: str,
+    timestamp: int,
+    zoom: int,
+) -> Image.Image:
+    x_nw, y_nw = lonlat_to_tile(west, north, zoom)
+    x_se, y_se = lonlat_to_tile(east, south, zoom)
+    x_min, x_max = math.floor(x_nw), math.floor(x_se)
+    y_min, y_max = math.floor(y_nw), math.floor(y_se)
+    cols, rows = x_max - x_min + 1, y_max - y_min + 1
+
+    headers = {"User-Agent": USER_AGENT}
+    if CALTOPO_COOKIE:
+        headers["Cookie"] = CALTOPO_COOKIE
+    sem = asyncio.Semaphore(CONCURRENCY)
+    async with aiohttp.ClientSession(headers=headers) as session:
+        tiles = await asyncio.gather(
+            *(
+                fetch_tile(session, sem, layer, timestamp, zoom, x, y)
+                for x in range(x_min, x_max + 1)
+                for y in range(y_min, y_max + 1)
+            )
+        )
+
+    mosaic = stitch(tiles, x_min, y_min, cols, rows)
+    return mosaic.crop(
+        (
+            (x_nw - x_min) * TILE_SIZE,
+            (y_nw - y_min) * TILE_SIZE,
+            (x_se - x_min) * TILE_SIZE,
+            (y_se - y_min) * TILE_SIZE,
+        )
     )
-    return bbox, river_gdf
 
 
-class Snowpack:
-    def __init__(
-        self,
-        geojson_filename: str,
-        start_date: datetime.date,
-        end_date: datetime.date,
-        config: SHConfig,
-    ):
-        self.config = config
-        self.bbox, self.river_gdf = _watershed_bbox(geojson_filename)
-        self.size = bbox_to_dimensions(self.bbox, resolution=10)
-
-        dates = _date_range(start_date, end_date)
-        requests = [self._build_request(date).download_list[0] for date in dates]
-        self.fetched_data = SentinelHubDownloadClient(config=self.config).download(
-            requests, max_threads=5
-        )
-
-    def _build_request(self, time_range: str) -> SentinelHubRequest:
-        return SentinelHubRequest(
-            evalscript=EVALSCRIPT,
-            input_data=[
-                SentinelHubRequest.input_data(
-                    data_collection=DataCollection.SENTINEL2_L2A,
-                    time_interval=time_range,
-                    mosaicking_order="leastCC",
-                    maxcc=0.5,
-                )
-            ],
-            responses=[
-                SentinelHubRequest.output_response("true_color", MimeType.TIFF),
-                SentinelHubRequest.output_response("ndsi", MimeType.TIFF),
-            ],
-            geometry=Geometry(self.river_gdf.geometry.values[0], crs=self.river_gdf.crs),
-            bbox=self.bbox,
-            size=self.size,
-            config=self.config,
-        )
-
-    def gen(self, output_dir: str) -> None:
-        os.makedirs(output_dir, exist_ok=True)
-        for idx, responses in enumerate(self.fetched_data):
-            image = responses["ndsi.tif"]
-            height, width, band_count = image.shape
-
-            metadata = {
-                "driver": "GTiff",
-                "dtype": "uint8",
-                "width": width,
-                "height": height,
-                "count": band_count,
-            }
-
-            with MemoryFile() as memfile:
-                with memfile.open(**metadata) as raster:
-                    raster.write(image.transpose(2, 0, 1))
-                    rgb_bands = raster.read([1, 2, 3])
-                    datamask = raster.read(4)
-
-                if not np.any(datamask != 0):
-                    continue
-
-                rgb_img = np.moveaxis(rgb_bands, 0, -1)
-                rgb_img = rgb_img / np.percentile(rgb_img, 99)
-                plt.imsave(os.path.join(output_dir, f"array_image-{idx}.png"), rgb_img)
+def mask_to_polygon(
+    image: Image.Image,
+    polygon: list[tuple[float, float]],
+    zoom: int,
+    west: float,
+    north: float,
+) -> Image.Image:
+    pixels = [lonlat_to_pixel(lon, lat, zoom, west, north) for lon, lat in polygon]
+    mask = Image.new("L", image.size, 0)
+    ImageDraw.Draw(mask).polygon(pixels, fill=255)
+    rgba = image.convert("RGBA")
+    rgba.putalpha(mask)
+    return rgba
 
 
-def _parse_date(s: str) -> datetime.date:
-    return datetime.datetime.strptime(s, "%Y-%m-%d").date()
+async def fetch_point(
+    lat: float,
+    lon: float,
+    layer: str,
+    timestamp: int,
+    zoom: int,
+    radius_km: float = RADIUS_KM,
+) -> Image.Image:
+    bbox = bbox_around_point(lat, lon, radius_km)
+    return await fetch_bbox(*bbox, layer=layer, timestamp=timestamp, zoom=zoom)
+
+
+async def fetch_geojson(
+    path: str, layer: str, timestamp: int, zoom: int
+) -> Image.Image:
+    polygon = load_geojson_polygon(path)
+    west, south, east, north = polygon_bbox(polygon)
+    image = await fetch_bbox(
+        west, south, east, north, layer=layer, timestamp=timestamp, zoom=zoom
+    )
+    return mask_to_polygon(image, polygon, zoom, west, north)
+
+
+def days_ago_to_timestamp(days_ago: int) -> int:
+    return int(time.time()) - days_ago * SECONDS_PER_DAY
+
+
+async def probe_tile_hashes(
+    layer: str, timestamps: list[int], zoom: int, x: int, y: int
+) -> dict[int, str | None]:
+    """Fetch one tile per timestamp and return {timestamp: md5_hex} (None on failure).
+    Useful for deduping which timestamps resolve to the same Sentinel pass."""
+    headers = {"User-Agent": USER_AGENT}
+    if CALTOPO_COOKIE:
+        headers["Cookie"] = CALTOPO_COOKIE
+    sem = asyncio.Semaphore(CONCURRENCY)
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async def probe(ts: int) -> tuple[int, str | None]:
+            try:
+                _, _, data = await fetch_tile(session, sem, layer, ts, zoom, x, y)
+                return ts, hashlib.md5(data).hexdigest()
+            except Exception:
+                return ts, None
+
+        return dict(await asyncio.gather(*(probe(ts) for ts in timestamps)))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate snow-cover images for a watershed from Sentinel-2 imagery."
+        description="Fetch Sentinel imagery tiles from CalTopo and stitch into a PNG. "
+        f"Point mode covers a ~{RADIUS_KM*2:g}km square; geojson mode covers the polygon."
     )
-    parser.add_argument("geojson", help="Path to watershed GeoJSON file")
+    parser.add_argument("lat", type=float, nargs="?", help="Center latitude (WGS84)")
+    parser.add_argument("lon", type=float, nargs="?", help="Center longitude (WGS84)")
+    parser.add_argument("--geojson", help="Polygon geojson file to cover (alternative to lat/lon)")
+    parser.add_argument("--zoom", type=int, default=DEFAULT_ZOOM, help=f"XYZ zoom (default {DEFAULT_ZOOM})")
     parser.add_argument(
-        "--start",
-        type=_parse_date,
-        default=datetime.date(2024, 5, 1),
-        help="Start date (YYYY-MM-DD)",
+        "--layer",
+        choices=LAYERS,
+        default=DEFAULT_LAYER,
+        help=f"Sentinel band combination (default {DEFAULT_LAYER}): "
+        "tc=true color, fc=false color, ag=agriculture, burn=burn scar",
     )
     parser.add_argument(
-        "--end",
-        type=_parse_date,
-        default=datetime.date(2024, 5, 22),
-        help="End date (YYYY-MM-DD)",
+        "--days-ago",
+        type=int,
+        default=0,
+        dest="days_ago",
+        help="How many days back from now (default 0 = today). "
+        "Resolved to a Unix timestamp; CalTopo returns the closest available capture.",
     )
-    parser.add_argument("--output", default="output", help="Output directory for PNGs")
+    parser.add_argument("--output", default=None, help="Output PNG path")
     args = parser.parse_args()
 
-    load_dotenv()
-    client_id = os.environ.get("SH_CLIENT_ID")
-    client_secret = os.environ.get("SH_CLIENT_SECRET")
-    if not client_id or not client_secret:
-        sys.exit("error: SH_CLIENT_ID and SH_CLIENT_SECRET environment variables required")
+    point_given = args.lat is not None and args.lon is not None
+    if args.geojson and point_given:
+        sys.exit("error: pass either lat/lon or --geojson, not both")
+    if not args.geojson and not point_given:
+        sys.exit("error: pass either lat/lon or --geojson")
 
-    config = SHConfig()
-    config.sh_client_id = client_id
-    config.sh_client_secret = client_secret
+    timestamp = days_ago_to_timestamp(args.days_ago)
+    tag = f"{args.layer}-{timestamp}"
+    if args.geojson:
+        default_name = os.path.splitext(os.path.basename(args.geojson))[0]
+        output = args.output or f"output/sentinel_{tag}_{default_name}.png"
+        coro = fetch_geojson(
+            args.geojson, layer=args.layer, timestamp=timestamp, zoom=args.zoom
+        )
+    else:
+        output = args.output or f"output/sentinel_{tag}_{args.lat}_{args.lon}.png"
+        coro = fetch_point(
+            args.lat, args.lon, layer=args.layer, timestamp=timestamp, zoom=args.zoom
+        )
 
-    snow = Snowpack(args.geojson, args.start, args.end, config)
-    snow.gen(args.output)
+    os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
+    image = asyncio.run(coro)
+    image.save(output)
+    print(f"wrote {output} ({image.size[0]}x{image.size[1]})")
 
 
 if __name__ == "__main__":

@@ -2,3 +2,4 @@ output/
 access.log
 __pycache__/
 venv
+.env

@@ -100,11 +100,26 @@ window.onload = function () {
                 // let kml_url = encodeURIComponent(`${t}`).replace(/%20/g, '%2520');
                 let captopo_url = `https://caltopo.com/map.html#ll=${data['lat']},${data['lon']}&z=13&b=mbt&kml=${kml_url}`;
 
+                let sentinels = data['sentinels'] || [];
+                let sentinelHtml = sentinels.length === 0 ? '' : `
+                    <br><b>Sentinel imagery:</b><br>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; padding: 10px 0;">
+                        ${sentinels.map(s => `
+                            <div style="text-align: center;">
+                                <div>${s.date} (-${s.days_ago}d)</div>
+                                <a target="_blank" href="${location.origin}/${encodeURI(s.path)}">
+                                    <img src="${location.origin}/${encodeURI(s.path)}" alt="${s.date}" style="max-width: 220px; max-height: 220px;">
+                                </a>
+                            </div>
+                        `).join('')}
+                    </div>`;
+
                 responsebox.innerHTML = `<b>Download:</b><br>
                     <a target="_blank" href="${location.origin}/${data['kml']}">
                     <img src="static/kml.png" width="60px" alt="kml" style="padding: 10px;"></a>
                         <a target="_blank" href="${location.origin}/${data['geojson']}">
-                    <img src="static/geojson.png" width="60px"  style="padding: 10px;"alt="geojson"></a><br>
+                    <img src="static/geojson.png" width="60px"  style="padding: 10px;"alt="geojson"></a>
+                    ${sentinelHtml}<br>
                     <iframe id="caltopoMap" src="${captopo_url}"></iframe>
                     `;
                 responsebox.style.display = 'block';

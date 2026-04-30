@@ -3,6 +3,7 @@ from pysheds.grid import Grid
 import numpy as np
 import simplekml
 import aiohttp
+import asyncio
 import logging
 import geojson
 import os
@@ -11,7 +12,13 @@ from aiohttp import web
 from typing import List, Union, cast
 import urllib.parse
 import json
+import datetime
 from shapely.geometry import shape as shapely_shape, Polygon
+
+import snowpack
+
+SENTINEL_DAYS_RANGE = range(1, 31)
+SENTINEL_ZOOM = 14
 
 logging.basicConfig(
     level=logging.INFO,
@@ -98,6 +105,7 @@ class Watershed:
 
         self.geojson = await self.export_geojson()
         self.kml = await self.export_kml()
+        self.sentinels = await self.export_sentinels()
         await self._log("Done!")
 
     async def get_dem(self) -> str:
@@ -240,6 +248,63 @@ class Watershed:
         await self._log(f'GeoJSON generated: "{filename}"')
         return filename
 
+    async def _fetch_one_sentinel(self, days_ago: int) -> dict | None:
+        timestamp = snowpack.days_ago_to_timestamp(days_ago)
+        date = datetime.datetime.fromtimestamp(
+            timestamp, tz=datetime.timezone.utc
+        ).strftime("%Y-%m-%d")
+        filename = f"{self.outdir}/sentinel_tc-{timestamp}_{self.name}.png"
+        try:
+            await self._log(f"Fetching Sentinel imagery for {date} (-{days_ago}d)...")
+            image = await snowpack.fetch_geojson(
+                self.geojson, layer="tc", timestamp=timestamp, zoom=SENTINEL_ZOOM
+            )
+            image.save(filename)
+            await self._log(f'Sentinel image generated: "{filename}"')
+            return {
+                "days_ago": days_ago,
+                "timestamp": timestamp,
+                "date": date,
+                "path": filename,
+            }
+        except Exception as e:
+            await self._log(f"Sentinel fetch failed for {date}: {e}")
+            return None
+
+    async def export_sentinels(self) -> list[dict]:
+        polygon = snowpack.load_geojson_polygon(self.geojson)
+        west, south, east, north = snowpack.polygon_bbox(polygon)
+        cx_lon, cy_lat = (west + east) / 2, (north + south) / 2
+        cx_f, cy_f = snowpack.lonlat_to_tile(cx_lon, cy_lat, SENTINEL_ZOOM)
+        cx, cy = int(cx_f), int(cy_f)
+
+        days = list(SENTINEL_DAYS_RANGE)
+        timestamps = [snowpack.days_ago_to_timestamp(d) for d in days]
+        await self._log(
+            f"Probing {len(days)} days for unique Sentinel snapshots..."
+        )
+        hashes = await snowpack.probe_tile_hashes(
+            "tc", timestamps, SENTINEL_ZOOM, cx, cy
+        )
+
+        # Keep the smallest days_ago per unique hash (most recent label for the pass).
+        earliest_for_hash: dict[str, int] = {}
+        for d, ts in zip(days, timestamps):
+            h = hashes.get(ts)
+            if h is None:
+                continue
+            if h not in earliest_for_hash or d < earliest_for_hash[h]:
+                earliest_for_hash[h] = d
+        unique_days = sorted(earliest_for_hash.values())
+        await self._log(
+            f"Found {len(unique_days)} unique snapshots in last {len(days)} days"
+        )
+
+        results = await asyncio.gather(
+            *(self._fetch_one_sentinel(d) for d in unique_days)
+        )
+        return [r for r in results if r is not None]
+
     async def export_kml(self) -> str:
         if not self.catchment_shapes:
             raise
@@ -307,6 +372,7 @@ async def handle_submit(request):
     response_content["expand_factor"] = watershed.expand_factor
     response_content["geojson"] = watershed.geojson
     response_content["kml"] = watershed.kml
+    response_content["sentinels"] = watershed.sentinels
     response_content["lat"] = watershed.lat
     response_content["lon"] = watershed.lon
     response_content["name"] = watershed.name

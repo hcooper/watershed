@@ -1,6 +1,8 @@
 aiohttp~=3.9
 geojson~=3.1
+python-dotenv~=1.0
 numpy~=1.26
+Pillow~=10.0
 pysheds~=0.4
 shapely~=2.0
 simplekml~=1.3
