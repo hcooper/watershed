@@ -32,6 +32,9 @@ def make_id() -> str:
     return str(uuid.uuid4())[:4]
 
 
+DATASET_ARCSEC = {"USGS30m": 1.0, "USGS10m": 1.0 / 3.0}
+
+
 class Watershed:
     def __init__(
         self,
@@ -111,8 +114,7 @@ class Watershed:
         # in degrees — pysheds' D8 flow direction assumes square pixels, and a
         # cos(lat) correction here gave non-square cells that snapped to the
         # wrong drainage.
-        arcsec_per_cell = {"USGS30m": 1.0, "USGS10m": 1.0 / 3.0}[dataset]
-        deg_per_cell = arcsec_per_cell / 3600.0
+        deg_per_cell = DATASET_ARCSEC[dataset] / 3600.0
         width_px = max(1, round((self.max_x - self.min_x) / deg_per_cell))
         height_px = max(1, round((self.max_y - self.min_y) / deg_per_cell))
 
@@ -196,6 +198,11 @@ class Watershed:
         it's likely the catchment has been clipped and the DEM should be enlarged.
         """
 
+        # Threshold scales with cell size: a polygonized vertex sitting on the
+        # bbox edge can land up to one cell inward, so 2 cells is a robust
+        # margin at any resolution.
+        threshold = 2 * DATASET_ARCSEC[self.dem] / 3600.0
+
         shape = self.catchment_shapes[0][0]
 
         catchment_polygon = cast(Polygon, shapely_shape(shape))
@@ -209,7 +216,7 @@ class Watershed:
                     abs(self.min_y - y),
                 ]
             )
-            if d < 0.0002:  # the magic number
+            if d < threshold:
                 await self._log(f"Clipping detected: {y},{x} {d}")
                 return True
         return False
