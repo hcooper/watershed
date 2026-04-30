@@ -21,33 +21,35 @@
             <form action="/" method="post">
                 <input type="hidden" id="client_id" name="client_id">
 
-                <label for="coordinates">Coordinates (lat, lon):</label>
-                <input type="text" id="coordinates" name="coordinates" required><br>
-                <button type="submit" id="submitbutton">Calculate!</button><br>
+                <label for="coordinates">Coordinates (lat, lon)</label>
+                <input type="text" id="coordinates" name="coordinates" required>
+
                 <a href="#" id="toggle-advanced">More Options</a>
 
                 <div id="advanced-section">
-                    <label for="name" style="display: inline;">Name:</label>
-                    <input type="text" id="name" name="name" placeholder="A custom name, used in labels and filenames"><br>
+                    <div class="options-grid">
+                        <label for="name">Name</label>
+                        <input type="text" id="name" name="name">
+                        <div class="help-text">Used in map labels and output filenames</div>
 
-                    <label for="expand_factor">Expand Factor: <span id="expand_factor_value">0.06</span></label>
-                    <div class="help-text">How large an area to model around your inital coordinates</div><br>
-                    <input type="range" id="expand_factor" name="expand_factor" min="0.06" max="0.2" step="0.01" value="0.06" required><br>
+                        <label for="expand_factor">Area size <span id="expand_factor_value">0.06</span></label>
+                        <input type="range" id="expand_factor" name="expand_factor" min="0.06" max="0.2" step="0.01" value="0.06" required>
+                        <div class="help-text">How large an area to model around your coordinates. Increase if the watershed gets clipped</div>
 
-                    <label for="dem" style="display: inline;">DEM:</label>
-                    <!-- <div class="help-text">Which DEM to use</div><br> -->
-                    <select name="dem" id="dem" required>
-                      <option value="USGS30m" selected="selected">USGS30m</option>
-                      <option value="USGS10m">USGS10m</option>
-                    </select><br>
+                        <label for="dem">DEM</label>
+                        <select name="dem" id="dem" required>
+                          <option value="USGS30m" selected="selected">USGS30m</option>
+                          <option value="USGS10m">USGS10m</option>
+                        </select>
+                        <div class="help-text">Elevation source. 10m is more detailed but slower and uses more memory</div>
 
-                    <label for="snap" style="display: inline;">Snap to River:</label>
-                    <!-- <div class="help-text">Move your calculation point to the nearest river</div><br> -->
-                    <input type="checkbox" id="snap" name="snap" checked>
-
+                        <label for="snap">Snap to river</label>
+                        <input type="checkbox" id="snap" name="snap" checked>
+                        <div class="help-text">Move the start point to the nearest river cell before calculating</div>
+                    </div>
                 </div>
 
-                
+                <button type="submit" id="submitbutton">Calculate</button>
             </form>
 
         </div>

@@ -131,7 +131,6 @@ window.onload = function () {
         }
     });
 
-
     document.getElementById('submitbutton').addEventListener('click', function (event) {
         var responsebox = document.getElementById('responsebox');
         responsebox.innerHTML = "";
