@@ -18,7 +18,7 @@ from shapely.geometry import shape as shapely_shape, Polygon
 import snowpack
 
 SENTINEL_DAYS_RANGE = range(1, 31)
-SENTINEL_ZOOM = 14
+SENTINEL_ZOOM = 15
 
 logging.basicConfig(
     level=logging.INFO,
