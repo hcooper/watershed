@@ -81,6 +81,8 @@ window.onload = function () {
             client_id: formData.get('client_id'),
             dem: formData.get('dem'),
             snap: formData.get('snap') ? 1 : 0,
+            snowpack: formData.get('snowpack') ? 1 : 0,
+            snowpack_layer: formData.get('snowpack_layer') || 'tc',
         };
 
         fetch('/', {
@@ -155,6 +157,11 @@ window.onload = function () {
     // Update expand factor value display
     document.getElementById('expand_factor').addEventListener('input', function (event) {
         document.getElementById('expand_factor_value').textContent = event.target.value;
+    });
+
+    // Enable/disable the snowpack band dropdown based on the snowpack checkbox
+    document.getElementById('snowpack').addEventListener('change', function (event) {
+        document.getElementById('snowpack_layer').disabled = !event.target.checked;
     });
 
 

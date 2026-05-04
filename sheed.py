@@ -52,6 +52,8 @@ class Watershed:
         client_id,
         dem,
         snap,
+        snowpack: bool = False,
+        snowpack_layer: str = "tc",
     ):
         self.id = client_id  # if client_id else make_id()
         self.outdir = "output"
@@ -62,6 +64,8 @@ class Watershed:
         self.expand_factor = expand_factor
         self.dem = dem
         self.snap = snap
+        self.snowpack = snowpack
+        self.snowpack_layer = snowpack_layer
         self.snapped_x = None
         self.snapped_y = None
 
@@ -105,7 +109,7 @@ class Watershed:
 
         self.geojson = await self.export_geojson()
         self.kml = await self.export_kml()
-        self.sentinels = await self.export_sentinels()
+        self.sentinels = await self.export_sentinels() if self.snowpack else []
         await self._log("Done!")
 
     async def get_dem(self) -> str:
@@ -253,11 +257,11 @@ class Watershed:
         date = datetime.datetime.fromtimestamp(
             timestamp, tz=datetime.timezone.utc
         ).strftime("%Y-%m-%d")
-        filename = f"{self.outdir}/sentinel_tc-{timestamp}_{self.name}.png"
+        filename = f"{self.outdir}/sentinel_{self.snowpack_layer}-{timestamp}_{self.name}.png"
         try:
             await self._log(f"Fetching Sentinel imagery for {date} (-{days_ago}d)...")
             image = await snowpack.fetch_geojson(
-                self.geojson, layer="tc", timestamp=timestamp, zoom=SENTINEL_ZOOM
+                self.geojson, layer=self.snowpack_layer, timestamp=timestamp, zoom=SENTINEL_ZOOM
             )
             image.save(filename)
             await self._log(f'Sentinel image generated: "{filename}"')
@@ -284,7 +288,7 @@ class Watershed:
             f"Probing {len(days)} days for unique Sentinel snapshots..."
         )
         hashes = await snowpack.probe_tile_hashes(
-            "tc", timestamps, SENTINEL_ZOOM, cx, cy
+            self.snowpack_layer, timestamps, SENTINEL_ZOOM, cx, cy
         )
 
         # Keep the smallest days_ago per unique hash (most recent label for the pass).
@@ -359,11 +363,16 @@ async def handle_submit(request):
         client_id = data["client_id"]
         dem = data["dem"]
         snap = data["snap"]
+        snowpack_on = bool(int(data.get("snowpack", 0)))
+        snowpack_layer = data.get("snowpack_layer", "tc")
 
     except (KeyError, ValueError):
         return web.Response(text="Invalid input", status=400)
 
-    watershed = Watershed(lat, lon, name, expand_factor, client_id, dem, snap)
+    watershed = Watershed(
+        lat, lon, name, expand_factor, client_id, dem, snap,
+        snowpack=snowpack_on, snowpack_layer=snowpack_layer,
+    )
     await watershed.work()
 
     response_content = {}

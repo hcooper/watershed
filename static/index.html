@@ -46,6 +46,19 @@
                         <label for="snap">Snap to river</label>
                         <input type="checkbox" id="snap" name="snap" checked>
                         <div class="help-text">Move the start point to the nearest river cell before calculating</div>
+
+                        <label for="snowpack">Snowpack imagery</label>
+                        <input type="checkbox" id="snowpack" name="snowpack">
+                        <div class="help-text">Fetch Sentinel-2 imagery covering the watershed for the last 30 days (deduped)</div>
+
+                        <label for="snowpack_layer">Snowpack band</label>
+                        <select name="snowpack_layer" id="snowpack_layer" disabled>
+                          <option value="tc" selected="selected">True Color</option>
+                          <option value="fc">False Red</option>
+                          <option value="ag">False Green</option>
+                          <option value="burn">False Burn</option>
+                        </select>
+                        <div class="help-text">Sentinel band combination to render</div>
                     </div>
                 </div>
 
