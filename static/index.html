@@ -4,10 +4,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="thunderforest-api-key" content="__THUNDERFOREST_API_KEY__">
     <link rel="icon" href="/static/favicon.png" type="image/x-icon">
     <link rel="stylesheet" type="text/css" href="/static/style.css">
     <link rel="stylesheet" type="text/css" href="/static/spinner.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
     <title>Watershed Calculator</title>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="/static/sheed.js"></script>
 </head>
 
@@ -23,6 +28,8 @@
 
                 <label for="coordinates">Coordinates (lat, lon)</label>
                 <input type="text" id="coordinates" name="coordinates" required>
+
+                <div id="map"></div>
 
                 <a href="#" id="toggle-advanced">More Options</a>
 

@@ -7,6 +7,81 @@ function getQueryParams() {
     };
 }
 
+function parseCoords(s) {
+    const m = s.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+    if (!m) return null;
+    const lat = parseFloat(m[1]);
+    const lon = parseFloat(m[2]);
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+    return [lat, lon];
+}
+
+let mapState = null;
+
+function setupMap() {
+    const coordsInput = document.getElementById('coordinates');
+    const initial = parseCoords(coordsInput.value) || [47.6062, -122.3321];
+    const initialZoom = parseCoords(coordsInput.value) ? 12 : 6;
+
+    const map = L.map('map').setView(initial, initialZoom);
+    const tfKey = document.querySelector('meta[name="thunderforest-api-key"]').content;
+    L.tileLayer(`https://{s}.tile.thunderforest.com/outdoors/{z}/{x}/{y}.png?apikey=${tfKey}`, {
+        maxZoom: 22,
+        attribution: 'Maps © <a href="https://www.thunderforest.com">Thunderforest</a>, Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    const marker = L.marker(initial, { draggable: true }).addTo(map);
+
+    let updating = false;
+
+    function writeInput(latlng) {
+        updating = true;
+        coordsInput.value = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
+        updating = false;
+    }
+
+    coordsInput.addEventListener('input', function () {
+        if (updating) return;
+        const c = parseCoords(coordsInput.value);
+        if (!c) return;
+        marker.setLatLng(c);
+        map.panTo(c);
+    });
+
+    marker.on('drag', function (e) { writeInput(e.latlng); });
+    marker.on('dragend', function (e) { writeInput(e.latlng); });
+
+    map.on('click', function (e) {
+        marker.setLatLng(e.latlng);
+        writeInput(e.latlng);
+    });
+
+    mapState = { map, marker, watershedLayer: null };
+}
+
+function clearWatershed() {
+    if (mapState && mapState.watershedLayer) {
+        mapState.map.removeLayer(mapState.watershedLayer);
+        mapState.watershedLayer = null;
+    }
+}
+
+async function showWatershed(geojsonPath) {
+    if (!mapState) return;
+    const url = `${location.origin}/${encodeURI(geojsonPath)}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+        console.error('Failed to load watershed geojson:', resp.status);
+        return;
+    }
+    const data = await resp.json();
+    clearWatershed();
+    mapState.watershedLayer = L.geoJSON(data, {
+        style: { color: '#0288D1', weight: 2, fillColor: '#0288D1', fillOpacity: 0.2 }
+    }).addTo(mapState.map);
+    mapState.map.fitBounds(mapState.watershedLayer.getBounds(), { padding: [10, 10] });
+}
+
 function setupWebSocket() {
     let ws;
 
@@ -15,7 +90,7 @@ function setupWebSocket() {
     } else {
         ws = new WebSocket(`ws://${location.host}/ws`);
     }
-    
+
     attachHandlers(ws);
 
     function attachHandlers(ws) {
@@ -63,12 +138,15 @@ window.onload = function () {
     // Initialize WebSocket connection
     setupWebSocket();
 
+    // Initialize Leaflet coordinate picker
+    setupMap();
+
     document.querySelector('form').onsubmit = function (e) {
         e.preventDefault();
 
         const submitButton = document.getElementById('submitbutton');
         const originalText = submitButton.innerHTML;
-        
+
         // Show spinner and disable button
         submitButton.innerHTML = '<span class="spinner"></span>Calculating...';
         submitButton.disabled = true;
@@ -94,13 +172,6 @@ window.onload = function () {
         }).then(response => response.json())
             .then(data => {
                 var responsebox = document.getElementById('responsebox');
-                // Caltopo badly handles spaces in the kml url, even when they're encoded as %20. Instead
-                // you have to double-encode the "%" as "%25".
-                // let t = "https://ropewiki.com/images/d/d6/Eagle_Creek.kml?ts=1748569712807";
-                // let kml_url = encodeURIComponent(`${location.origin}/${data['kml']}`).replace(/%20/g, '%2520');
-                let kml_url = `${location.origin}/${data['kml']}`;
-                // let kml_url = encodeURIComponent(`${t}`).replace(/%20/g, '%2520');
-                let captopo_url = `https://caltopo.com/map.html#ll=${data['lat']},${data['lon']}&z=13&b=mbt&kml=${kml_url}`;
 
                 let sentinels = data['sentinels'] || [];
                 let sentinelHtml = sentinels.length === 0 ? '' : `
@@ -116,15 +187,21 @@ window.onload = function () {
                         `).join('')}
                     </div>`;
 
+                let kml_url = `${location.origin}/${data['kml']}`;
+                let caltopo_url = `https://caltopo.com/map.html#ll=${data['lat']},${data['lon']}&z=13&b=mbt&kml=${kml_url}`;
+
                 responsebox.innerHTML = `<b>Download:</b><br>
                     <a target="_blank" href="${location.origin}/${data['kml']}">
                     <img src="static/kml.png" width="60px" alt="kml" style="padding: 10px;"></a>
                         <a target="_blank" href="${location.origin}/${data['geojson']}">
                     <img src="static/geojson.png" width="60px"  style="padding: 10px;"alt="geojson"></a>
-                    ${sentinelHtml}<br>
-                    <iframe id="caltopoMap" src="${captopo_url}"></iframe>
+                    <br>
+                    <a class="button-link" target="_blank" href="${caltopo_url}">Open in CalTopo</a>
+                    ${sentinelHtml}
                     `;
                 responsebox.style.display = 'block';
+
+                showWatershed(data['geojson']);
             })
             .catch(error => {
                 console.error('Error:', error);
@@ -152,6 +229,7 @@ window.onload = function () {
         var responsebox = document.getElementById('responsebox');
         responsebox.innerHTML = "";
         responsebox.style.display = 'none';
+        clearWatershed();
     });
 
     // Update expand factor value display

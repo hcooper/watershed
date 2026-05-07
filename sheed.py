@@ -14,8 +14,12 @@ import urllib.parse
 import json
 import datetime
 from shapely.geometry import shape as shapely_shape, Polygon
+from dotenv import load_dotenv
 
 import snowpack
+
+load_dotenv()
+THUNDERFOREST_API_KEY = os.environ.get("THUNDERFOREST_API_KEY", "")
 
 SENTINEL_DAYS_RANGE = range(1, 31)
 SENTINEL_ZOOM = 15
@@ -344,7 +348,8 @@ class Watershed:
 async def handle_index(request):
     with open("static/index.html") as f:
         index = f.read()
-        return web.Response(text=index, content_type="text/html")
+    index = index.replace("__THUNDERFOREST_API_KEY__", THUNDERFOREST_API_KEY)
+    return web.Response(text=index, content_type="text/html")
 
 
 async def handle_submit(request):
