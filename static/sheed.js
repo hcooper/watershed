@@ -18,6 +18,19 @@ function parseCoords(s) {
 
 let mapState = null;
 
+function syncUrlFromCoords(coordsValue) {
+    const c = parseCoords(coordsValue);
+    const url = new URL(window.location);
+    if (c) {
+        url.searchParams.set('lat', c[0].toFixed(6));
+        url.searchParams.set('lon', c[1].toFixed(6));
+    } else {
+        url.searchParams.delete('lat');
+        url.searchParams.delete('lon');
+    }
+    window.history.replaceState({}, '', url);
+}
+
 function setupMap() {
     const coordsInput = document.getElementById('coordinates');
     const initial = parseCoords(coordsInput.value) || [47.6062, -122.3321];
@@ -38,9 +51,11 @@ function setupMap() {
         updating = true;
         coordsInput.value = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
         updating = false;
+        syncUrlFromCoords(coordsInput.value);
     }
 
     coordsInput.addEventListener('input', function () {
+        syncUrlFromCoords(coordsInput.value);
         if (updating) return;
         const c = parseCoords(coordsInput.value);
         if (!c) return;
