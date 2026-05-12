@@ -7,6 +7,23 @@ function getQueryParams() {
     };
 }
 
+function computeCompareDays() {
+    const mode = document.getElementById('snowpack_compare').value;
+    if (mode === 'off') return 0;
+    if (mode === '1y') return 365;
+    if (mode === '1m') return 30;
+    if (mode === 'custom') {
+        const dateStr = document.getElementById('snowpack_compare_date').value;
+        if (!dateStr) return 0;
+        const picked = new Date(dateStr + 'T00:00:00');
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const days = Math.round((today - picked) / (1000 * 60 * 60 * 24));
+        return days > 0 ? days : 0;
+    }
+    return 0;
+}
+
 function parseCoords(s) {
     const m = s.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
     if (!m) return null;
@@ -321,6 +338,7 @@ window.onload = function () {
             snap: formData.get('snap') ? 1 : 0,
             snowpack: formData.get('snowpack') ? 1 : 0,
             snowpack_layer: formData.get('snowpack_layer') || 'tc',
+            snowpack_compare_days: computeCompareDays(),
         };
 
         fetch('/', {
@@ -334,15 +352,24 @@ window.onload = function () {
                 var responsebox = document.getElementById('responsebox');
 
                 let sentinels = data['sentinels'] || [];
+                const renderThumb = (s, labelSuffix = '') => `
+                    <div>${s.date} (-${s.days_ago}d)${labelSuffix}</div>
+                    <a target="_blank" href="${location.origin}/${encodeURI(s.path)}">
+                        <img src="${location.origin}/${encodeURI(s.path)}" alt="${s.date}" style="max-width: 220px; max-height: 220px;">
+                    </a>
+                `;
                 let sentinelHtml = sentinels.length === 0 ? '' : `
                     <br><b>Sentinel imagery:</b><br>
                     <div style="display: flex; flex-wrap: wrap; gap: 10px; padding: 10px 0;">
                         ${sentinels.map(s => `
-                            <div style="text-align: center;">
-                                <div>${s.date} (-${s.days_ago}d)</div>
-                                <a target="_blank" href="${location.origin}/${encodeURI(s.path)}">
-                                    <img src="${location.origin}/${encodeURI(s.path)}" alt="${s.date}" style="max-width: 220px; max-height: 220px;">
-                                </a>
+                            <div class="sentinel-card${s.hasOwnProperty('comparison') ? ' paired' : ''}">
+                                ${renderThumb(s)}
+                                ${s.comparison ? `
+                                    <div class="sentinel-prior-label">compared with</div>
+                                    ${renderThumb(s.comparison)}
+                                ` : (s.hasOwnProperty('comparison') ? `
+                                    <div class="sentinel-prior-label sentinel-prior-missing">comparison unavailable</div>
+                                ` : '')}
                             </div>
                         `).join('')}
                     </div>`;
@@ -397,9 +424,29 @@ window.onload = function () {
         document.getElementById('expand_factor_value').textContent = event.target.value;
     });
 
-    // Enable/disable the snowpack band dropdown based on the snowpack checkbox
+    // Enable/disable the snowpack band dropdown and compare controls based on the snowpack checkbox
     document.getElementById('snowpack').addEventListener('change', function (event) {
         document.getElementById('snowpack_layer').disabled = !event.target.checked;
+        const compare = document.getElementById('snowpack_compare');
+        compare.disabled = !event.target.checked;
+        if (!event.target.checked) {
+            compare.value = 'off';
+            compare.dispatchEvent(new Event('change'));
+        }
+    });
+
+    // Show the date picker only when "Custom date…" is selected
+    document.getElementById('snowpack_compare').addEventListener('change', function (event) {
+        const dateInput = document.getElementById('snowpack_compare_date');
+        const isCustom = event.target.value === 'custom';
+        dateInput.hidden = !isCustom;
+        dateInput.disabled = !isCustom;
+        if (isCustom && !dateInput.value) {
+            // Default to ~1 year ago so the picker doesn't open at today
+            const d = new Date();
+            d.setFullYear(d.getFullYear() - 1);
+            dateInput.value = d.toISOString().slice(0, 10);
+        }
     });
 
 

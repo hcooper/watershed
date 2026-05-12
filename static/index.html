@@ -70,6 +70,18 @@
                           <option value="burn">False Burn</option>
                         </select>
                         <div class="help-text">Sentinel band combination to render</div>
+
+                        <label for="snowpack_compare">Compare to</label>
+                        <div class="compare-controls">
+                            <select name="snowpack_compare" id="snowpack_compare" disabled>
+                              <option value="off" selected="selected">Off</option>
+                              <option value="1y">1 year prior</option>
+                              <option value="1m">1 month prior</option>
+                              <option value="custom">Custom date…</option>
+                            </select>
+                            <input type="date" id="snowpack_compare_date" name="snowpack_compare_date" hidden disabled>
+                        </div>
+                        <div class="help-text">Also fetch each current image's counterpart from an earlier date and show them paired</div>
                     </div>
                 </div>
 

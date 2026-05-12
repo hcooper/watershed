@@ -58,6 +58,7 @@ class Watershed:
         snap,
         snowpack: bool = False,
         snowpack_layer: str = "tc",
+        snowpack_compare_days: int = 0,
     ):
         self.id = client_id  # if client_id else make_id()
         self.outdir = "output"
@@ -70,6 +71,7 @@ class Watershed:
         self.snap = snap
         self.snowpack = snowpack
         self.snowpack_layer = snowpack_layer
+        self.snowpack_compare_days = snowpack_compare_days
         self.snapped_x = None
         self.snapped_y = None
 
@@ -308,10 +310,25 @@ class Watershed:
             f"Found {len(unique_days)} unique snapshots in last {len(days)} days"
         )
 
+        offset = self.snowpack_compare_days
+        fetch_days = list(unique_days)
+        if offset > 0:
+            fetch_days += [d + offset for d in unique_days]
+
         results = await asyncio.gather(
-            *(self._fetch_one_sentinel(d) for d in unique_days)
+            *(self._fetch_one_sentinel(d) for d in fetch_days)
         )
-        return [r for r in results if r is not None]
+        by_day = dict(zip(fetch_days, results))
+
+        paired = []
+        for d in unique_days:
+            cur = by_day.get(d)
+            if cur is None:
+                continue
+            if offset > 0:
+                cur["comparison"] = by_day.get(d + offset)
+            paired.append(cur)
+        return paired
 
     async def export_kml(self) -> str:
         if not self.catchment_shapes:
@@ -370,6 +387,7 @@ async def handle_submit(request):
         snap = data["snap"]
         snowpack_on = bool(int(data.get("snowpack", 0)))
         snowpack_layer = data.get("snowpack_layer", "tc")
+        snowpack_compare_days = max(0, int(data.get("snowpack_compare_days", 0) or 0))
 
     except (KeyError, ValueError):
         return web.Response(text="Invalid input", status=400)
@@ -377,6 +395,7 @@ async def handle_submit(request):
     watershed = Watershed(
         lat, lon, name, expand_factor, client_id, dem, snap,
         snowpack=snowpack_on, snowpack_layer=snowpack_layer,
+        snowpack_compare_days=snowpack_compare_days,
     )
     await watershed.work()
 

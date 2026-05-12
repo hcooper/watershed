@@ -301,6 +301,47 @@ button:disabled {
     font-style: italic;
 }
 
+.sentinel-card {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sentinel-card.paired {
+    border: 1px solid #0288D1;
+    border-radius: 6px;
+    padding: 8px;
+    background: #F5FBFD;
+}
+
+.compare-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.compare-controls input[type="date"] {
+    padding: 6px 8px;
+    border: 1px solid #0288D1;
+    border-radius: 4px;
+    background: #FFFFFF;
+    color: #01579B;
+    font-family: inherit;
+}
+
+.sentinel-prior-label {
+    margin-top: 6px;
+    font-size: 0.8em;
+    color: #0288D1;
+    font-style: italic;
+}
+
+.sentinel-prior-missing {
+    color: #999;
+}
+
 .options-grid .help-text {
     grid-column: 2;
     margin: -6px 0 4px 0;
