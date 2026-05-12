@@ -43,6 +43,56 @@ h1 {
     border-radius: 4px;
 }
 
+#coords-wrapper {
+    position: relative;
+}
+
+#coords-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 2px;
+    background: #FFFFFF;
+    border: 1px solid #0288D1;
+    border-radius: 4px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 1000;
+    text-align: left;
+}
+
+.suggestion {
+    padding: 8px 12px;
+    cursor: pointer;
+    color: #01579B;
+}
+
+.suggestion.active,
+.suggestion:hover {
+    background: #E0F7FA;
+}
+
+.suggestion-empty {
+    padding: 8px 12px;
+    color: #666;
+    font-style: italic;
+}
+
+#ropewiki-link {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 0.85em;
+    font-style: italic;
+    color: #0288D1;
+    text-decoration: none;
+}
+
+#ropewiki-link:hover {
+    text-decoration: underline;
+}
+
 label {
     display: block;
     margin-top: 10px;

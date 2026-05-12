@@ -97,6 +97,148 @@ async function showWatershed(geojsonPath) {
     mapState.map.fitBounds(mapState.watershedLayer.getBounds(), { padding: [10, 10] });
 }
 
+function setupRopewikiSearch() {
+    const coordsInput = document.getElementById('coordinates');
+    const suggestionsBox = document.getElementById('coords-suggestions');
+    const ropewikiLink = document.getElementById('ropewiki-link');
+
+    let debounceTimer = null;
+    let latestSearchId = 0;
+    let activeIndex = -1;
+    let currentResults = [];
+
+    function hideSuggestions() {
+        suggestionsBox.hidden = true;
+        suggestionsBox.innerHTML = '';
+        activeIndex = -1;
+        currentResults = [];
+    }
+
+    function clearRopewikiLink() {
+        ropewikiLink.hidden = true;
+        ropewikiLink.removeAttribute('href');
+        ropewikiLink.textContent = '';
+    }
+
+    function renderSuggestions(results) {
+        currentResults = results;
+        activeIndex = results.length ? 0 : -1;
+        suggestionsBox.innerHTML = '';
+        if (!results.length) {
+            const empty = document.createElement('div');
+            empty.className = 'suggestion-empty';
+            empty.textContent = 'No matches on Ropewiki';
+            suggestionsBox.appendChild(empty);
+        } else {
+            results.forEach((item, i) => {
+                const div = document.createElement('div');
+                div.className = 'suggestion' + (i === activeIndex ? ' active' : '');
+                div.textContent = item.title;
+                div.addEventListener('mouseenter', () => setActive(i));
+                div.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    selectSuggestion(i);
+                });
+                suggestionsBox.appendChild(div);
+            });
+        }
+        suggestionsBox.hidden = false;
+    }
+
+    function setActive(i) {
+        const nodes = suggestionsBox.querySelectorAll('.suggestion');
+        nodes.forEach((n, idx) => n.classList.toggle('active', idx === i));
+        activeIndex = i;
+    }
+
+    async function selectSuggestion(i) {
+        const item = currentResults[i];
+        if (!item) return;
+        hideSuggestions();
+        try {
+            const resp = await fetch('/api/ropewiki/coords?title=' + encodeURIComponent(item.title));
+            if (resp.status === 404) {
+                suggestionsBox.innerHTML = '';
+                const msg = document.createElement('div');
+                msg.className = 'suggestion-empty';
+                msg.textContent = 'No coordinates on Ropewiki for "' + item.title + '"';
+                suggestionsBox.appendChild(msg);
+                suggestionsBox.hidden = false;
+                return;
+            }
+            if (!resp.ok) return;
+            const data = await resp.json();
+            coordsInput.value = `${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}`;
+            coordsInput.dispatchEvent(new Event('input', { bubbles: true }));
+            syncUrlFromCoords(coordsInput.value);
+            document.getElementById('name').value = item.title;
+            if (mapState && mapState.map) {
+                mapState.map.setView([data.lat, data.lon], 13);
+            }
+            ropewikiLink.href = item.url;
+            ropewikiLink.textContent = 'View ' + item.title + ' on Ropewiki ↗';
+            ropewikiLink.hidden = false;
+        } catch (err) {
+            console.error('Ropewiki coords fetch failed:', err);
+        }
+    }
+
+    async function runSearch(q) {
+        const id = ++latestSearchId;
+        try {
+            const resp = await fetch('/api/ropewiki/search?q=' + encodeURIComponent(q));
+            if (id !== latestSearchId) return;
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (id !== latestSearchId) return;
+            renderSuggestions(data.results || []);
+        } catch (err) {
+            if (id !== latestSearchId) return;
+            console.error('Ropewiki search failed:', err);
+        }
+    }
+
+    coordsInput.addEventListener('input', function () {
+        clearRopewikiLink();
+        const value = coordsInput.value;
+        if (parseCoords(value)) {
+            hideSuggestions();
+            return;
+        }
+        if (value.trim().length < 2) {
+            hideSuggestions();
+            return;
+        }
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => runSearch(value.trim()), 250);
+    });
+
+    coordsInput.addEventListener('keydown', function (e) {
+        if (suggestionsBox.hidden) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (currentResults.length) setActive((activeIndex + 1) % currentResults.length);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (currentResults.length) setActive((activeIndex - 1 + currentResults.length) % currentResults.length);
+        } else if (e.key === 'Enter') {
+            if (activeIndex >= 0 && currentResults.length) {
+                e.preventDefault();
+                selectSuggestion(activeIndex);
+            }
+        } else if (e.key === 'Escape') {
+            hideSuggestions();
+        }
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!suggestionsBox.contains(e.target) && e.target !== coordsInput) {
+            hideSuggestions();
+        }
+    });
+}
+
+
 function setupWebSocket() {
     let ws;
 
@@ -155,6 +297,9 @@ window.onload = function () {
 
     // Initialize Leaflet coordinate picker
     setupMap();
+
+    // Initialize Ropewiki canyon search typeahead
+    setupRopewikiSearch();
 
     document.querySelector('form').onsubmit = function (e) {
         e.preventDefault();

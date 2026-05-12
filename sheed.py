@@ -426,6 +426,72 @@ async def websocket_handler(request):
     return ws
 
 
+ROPEWIKI_API = "https://ropewiki.com/api.php"
+
+
+async def handle_ropewiki_search(request):
+    q = request.query.get("q", "").strip()
+    if len(q) < 2:
+        return web.json_response({"results": []})
+
+    params = {
+        "action": "opensearch",
+        "search": q,
+        "limit": "10",
+        "namespace": "0",
+        "format": "json",
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(ROPEWIKI_API, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    return web.json_response({"results": []})
+                data = await resp.json()
+    except Exception as e:
+        logging.warning(f"Ropewiki search failed: {e}")
+        return web.json_response({"results": []})
+
+    titles = data[1] if len(data) > 1 else []
+    urls = data[3] if len(data) > 3 else []
+    results = [{"title": t, "url": u} for t, u in zip(titles, urls)]
+    return web.json_response({"results": results})
+
+
+async def handle_ropewiki_coords(request):
+    title = request.query.get("title", "").strip()
+    if not title:
+        return web.json_response({"error": "title required"}, status=400)
+
+    params = {
+        "action": "ask",
+        "query": f"[[{title}]]|?Has_coordinates",
+        "format": "json",
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(ROPEWIKI_API, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    return web.json_response({"error": "upstream error"}, status=502)
+                data = await resp.json()
+    except Exception as e:
+        logging.warning(f"Ropewiki coords failed: {e}")
+        return web.json_response({"error": "upstream error"}, status=502)
+
+    results = data.get("query", {}).get("results", {})
+    page = next(iter(results.values()), None) if results else None
+    printouts = page.get("printouts", {}) if page else {}
+    coords = printouts.get("Has coordinates") or printouts.get("Has_coordinates") or []
+    if not coords:
+        return web.json_response({"error": "no coordinates"}, status=404)
+
+    point = coords[0]
+    lat = point.get("lat")
+    lon = point.get("lon")
+    if lat is None or lon is None:
+        return web.json_response({"error": "no coordinates"}, status=404)
+    return web.json_response({"lat": lat, "lon": lon})
+
+
 os.makedirs("output/", exist_ok=True)
 os.makedirs("static/", exist_ok=True)
 
@@ -443,6 +509,8 @@ app.router.add_post("/", handle_submit)
 app.router.add_static(prefix="/output", path="output/", show_index=True)
 app.router.add_static(prefix="/static", path="static/", show_index=False)
 app.router.add_get("/ws", websocket_handler)
+app.router.add_get("/api/ropewiki/search", handle_ropewiki_search)
+app.router.add_get("/api/ropewiki/coords", handle_ropewiki_coords)
 app.on_shutdown.append(close_websockets)
 
 clients: dict[str, web.WebSocketResponse] = {}

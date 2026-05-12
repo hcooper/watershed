@@ -26,8 +26,12 @@
             <form action="/" method="post">
                 <input type="hidden" id="client_id" name="client_id">
 
-                <label for="coordinates">Coordinates (lat, lon)</label>
-                <input type="text" id="coordinates" name="coordinates" required>
+                <label for="coordinates">Coordinates or canyon name</label>
+                <div id="coords-wrapper">
+                    <input type="text" id="coordinates" name="coordinates" autocomplete="off" required>
+                    <div id="coords-suggestions" hidden></div>
+                </div>
+                <a id="ropewiki-link" target="_blank" rel="noopener" hidden></a>
 
                 <div id="map"></div>
 
