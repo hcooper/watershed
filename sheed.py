@@ -537,4 +537,4 @@ clients: dict[str, web.WebSocketResponse] = {}
 
 if __name__ == "__main__":
     print("Starting web...")
-    web.run_app(app, host="0.0.0.0", port=8080, access_log=access_log)
+    web.run_app(app, host="::", port=8080, access_log=access_log)
