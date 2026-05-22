@@ -11,7 +11,7 @@ import time
 
 import aiohttp
 from dotenv import load_dotenv
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 
 load_dotenv()
@@ -157,6 +157,31 @@ def mask_to_polygon(
     rgba = image.convert("RGBA")
     rgba.putalpha(mask)
     return rgba
+
+
+def add_date_bar(image: Image.Image, date: str) -> Image.Image:
+    """Return image with a black bar along the bottom showing date in white text."""
+    bar_height = max(24, round(image.height * 0.04))
+    font_size = round(bar_height * 0.6)
+    try:
+        font = ImageFont.truetype("DejaVuSans.ttf", font_size)
+    except OSError:
+        font = ImageFont.load_default()
+
+    has_alpha = image.mode == "RGBA"
+    mode = "RGBA" if has_alpha else "RGB"
+    black = (0, 0, 0, 255) if has_alpha else (0, 0, 0)
+    white = (255, 255, 255, 255) if has_alpha else (255, 255, 255)
+
+    canvas = Image.new(mode, (image.width, image.height + bar_height), black)
+    canvas.paste(image, (0, 0))
+
+    draw = ImageDraw.Draw(canvas)
+    left, top, right, bottom = draw.textbbox((0, 0), date, font=font)
+    x = (image.width - (right - left)) // 2 - left
+    y = image.height + (bar_height - (bottom - top)) // 2 - top
+    draw.text((x, y), date, fill=white, font=font)
+    return canvas
 
 
 async def fetch_point(

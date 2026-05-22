@@ -269,6 +269,7 @@ class Watershed:
             image = await snowpack.fetch_geojson(
                 self.geojson, layer=self.snowpack_layer, timestamp=timestamp, zoom=SENTINEL_ZOOM
             )
+            image = snowpack.add_date_bar(image, date)
             image.save(filename)
             await self._log(f'Sentinel image generated: "{filename}"')
             return {
